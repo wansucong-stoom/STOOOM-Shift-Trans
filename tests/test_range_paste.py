@@ -10,7 +10,7 @@ class Range:
  def CompareEndpoints(self,a,t,b):return 0
  def GetText(self,n):return 'original'
 r=Range(); selection=types.SimpleNamespace(Length=1,GetElement=lambda i:r)
-pattern=types.SimpleNamespace(GetSelection=lambda:selection)
+pattern=types.SimpleNamespace(GetSelection=lambda:selection,DocumentRange=object())
 main.focused_element=lambda:((1,2),None,types.SimpleNamespace(iface_text=pattern))
 state={'selected':False,'paste':False,'restore':False,'valid':True}
 main.range_access.unchanged=lambda *a:state['valid']

@@ -354,7 +354,7 @@ class App(QWidget):
    selected_rid,selected_info,selected_wrapper=focused_element()
    if selected_rid!=rid: raise ValueError('입력창이 바뀌어 교체하지 않았습니다.')
    selection=selected_wrapper.iface_text.GetSelection()
-   if not range_access.selection_matches(selection,snapshot.target,snapshot.text):
+   if not range_access.selection_matches(selection,snapshot.target,snapshot.text,selected_wrapper.iface_text.DocumentRange):
     raise ValueError('번역할 범위를 선택하지 못해 교체하지 않았습니다.')
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd: raise ValueError('활성 창이 바뀌어 교체하지 않았습니다.')
    kb=keyboard.Controller()
