@@ -254,8 +254,10 @@ class App(QWidget):
   enginepage=page('번역 엔진','기본 엔진 또는 호환되는 사용자 엔진을 선택합니다.')
   self.engine=QComboBox(); self.engine.addItems(['기본 오프라인 엔진','사용자 외부 엔진']); enginepage.addWidget(self.engine)
   warning=QLabel('외부 엔진에는 원문이 전달됩니다. 인터넷 사용 여부는 선택한 엔진에 따라 다릅니다.'); warning.setWordWrap(True); warning.setStyleSheet('color:#7d8791;'); enginepage.addWidget(warning)
-  row=QHBoxLayout(); engine_btn=QPushButton('엔진 EXE 선택'); engine_btn.setObjectName('secondary'); engine_btn.clicked.connect(self.choose_engine); row.addWidget(engine_btn); row.addStretch(); enginepage.addLayout(row); enginepage.addStretch()
-  self.load(); self.refresh()
+  row=QHBoxLayout(); engine_btn=QPushButton('엔진 EXE 선택'); engine_btn.setObjectName('secondary'); engine_btn.clicked.connect(self.choose_engine); row.addWidget(engine_btn); row.addStretch(); enginepage.addLayout(row)
+  self.engine_path_label=QLabel('선택된 외부 엔진 없음'); self.engine_path_label.setWordWrap(True); self.engine_path_label.setStyleSheet('color:#7d8791;'); enginepage.addWidget(self.engine_path_label); enginepage.addStretch()
+  self._engine_dialog=None
+  self.load(); self.refresh(); self.update_engine_label()
   for box in list(self.target.values())+[self.source,self.engine]: box.currentTextChanged.connect(self.save)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'; icon=QIcon(str(icon_path)); self.setWindowIcon(icon)
   self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show() if reason==QSystemTrayIcon.ActivationReason.DoubleClick else None); self.tray.show()
@@ -272,8 +274,23 @@ class App(QWidget):
  def save(self,*args):
   (APP/'settings.json').write_text(json.dumps({**{k:v.currentText() for k,v in self.target.items()},'source':self.source.currentText(),'engine':self.engine.currentText(),'external_path':self.external_path},ensure_ascii=False),encoding='utf-8')
  def choose_engine(self):
-  path,_=QFileDialog.getOpenFileName(self,'사용자 번역 엔진 선택','','Windows 실행 파일 (*.exe)')
-  if path: self.external_path=path; self.status.setText('사용자 엔진: '+path); self.save()
+  if self._engine_dialog is not None:
+   self._engine_dialog.raise_(); self._engine_dialog.activateWindow(); return
+  dialog=QFileDialog(self,'사용자 번역 엔진 선택')
+  dialog.setOption(QFileDialog.Option.DontUseNativeDialog,True)
+  dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+  dialog.setNameFilter('Windows 실행 파일 (*.exe)')
+  dialog.fileSelected.connect(self.engine_selected)
+  dialog.finished.connect(self.engine_dialog_closed)
+  self._engine_dialog=dialog
+  dialog.open()
+ def engine_selected(self,path):
+  self.external_path=path; self.update_engine_label(); self.engine.setCurrentText('사용자 외부 엔진'); self.save()
+ def update_engine_label(self):
+  self.engine_path_label.setText('선택된 엔진: '+self.external_path if self.external_path else '선택된 외부 엔진 없음')
+ def engine_dialog_closed(self,result):
+  dialog=self._engine_dialog; self._engine_dialog=None
+  if dialog is not None: dialog.deleteLater()
  def refresh(self):
   for k,box in self.checks.items(): box.setText(self.pack_labels[k]+('   ·   설치됨' if pack_installed(k) else '   ·   미설치'))
  def download(self):
