@@ -12,6 +12,7 @@ class RangeSnapshot:
     target: object
     text: str
     selected: bool
+    document_mode: bool
 
 def capture(runtime_id, text_pattern, document_mode):
     selections = text_pattern.GetSelection()
@@ -27,7 +28,7 @@ def capture(runtime_id, text_pattern, document_mode):
     text = target.GetText(-1)
     if not text or not text.strip():
         raise ValueError('현재 선택 또는 문단의 텍스트를 읽을 수 없습니다.')
-    return RangeSnapshot(tuple(runtime_id),anchor,target,text,selected)
+    return RangeSnapshot(tuple(runtime_id),anchor,target,text,selected,document_mode)
 
 def unchanged(snapshot, runtime_id, text_pattern):
     if tuple(runtime_id) != snapshot.runtime_id:

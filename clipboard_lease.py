@@ -6,6 +6,7 @@ its GUI thread in a different apartment; changing that thread's mode is unsafe.
 import ctypes
 import queue
 import threading
+import unicodedata
 import pythoncom
 import win32clipboard
 
@@ -29,7 +30,9 @@ class ClipboardLease:
     op,arg,event,state=self._requests.get()
     if op=='stop': event.set(); break
     try:
-     value=self._put(arg) if op=='put' else self._restore()
+     if op=='put':value=self._put(arg)
+     elif op=='confirm':value=self._confirm_and_put(*arg)
+     else:value=self._restore()
      outcome=(True,value)
     except Exception as e:
      if op=='put':
@@ -41,7 +44,7 @@ class ClipboardLease:
      if not cancelled:
       state['result']=outcome
       event.set()
-    if cancelled and op=='put':
+    if cancelled and op in ('put','confirm'):
      try:self._restore()
      except Exception:pass
   finally:
@@ -77,6 +80,27 @@ class ClipboardLease:
    self.ours=ctypes.windll.user32.GetClipboardSequenceNumber()
    win32clipboard.SetClipboardText(text,win32clipboard.CF_UNICODETEXT)
    self.ours=ctypes.windll.user32.GetClipboardSequenceNumber()
+  finally:win32clipboard.CloseClipboard()
+ def confirm_selection_and_put(self,expected,translation):
+  """Verify the result of Ctrl+C before replacing our clipboard text."""
+  return self._call('confirm',(expected,translation))
+ def _confirm_and_put(self,expected,translation):
+  win32clipboard.OpenClipboard()
+  try:
+   seq=ctypes.windll.user32.GetClipboardSequenceNumber()
+   if seq==self.ours:return 'pending'
+   if not win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):return 'mismatch'
+   actual=win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+   def norm(text):return unicodedata.normalize('NFC',text.replace('\r\n','\n').replace('\r','\n'))
+   if norm(actual)!=norm(expected):return 'mismatch'
+   # We have observed the copy of exactly our expected selection. If another
+   # application changes the clipboard after this, restore() will not clobber it.
+   self.ours=seq
+   win32clipboard.EmptyClipboard()
+   self.ours=ctypes.windll.user32.GetClipboardSequenceNumber()
+   win32clipboard.SetClipboardText(translation,win32clipboard.CF_UNICODETEXT)
+   self.ours=ctypes.windll.user32.GetClipboardSequenceNumber()
+   return 'matched'
   finally:win32clipboard.CloseClipboard()
  def _restore(self):
   if self.ours is None or ctypes.windll.user32.GetClipboardSequenceNumber()!=self.ours:return False
