@@ -5,6 +5,8 @@ import clipboard_lease
 import chunking
 import focus_guard
 import engine_readiness
+import input_settle
+import model_packs
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QCheckBox, QSystemTrayIcon, QMenu, QMessageBox, QFileDialog, QStackedWidget, QFrame
@@ -22,9 +24,10 @@ PACKS = {
  'ja_en': ('623e3477959a815eb0a5ef53e09079ae8f1f9d3bbcd230473baf28c03fb83335',117155716),
  'ko_en': ('6da8f3db6ca40f42b1875570a1c06856f6e17c7ef62845d85de217ba548c1471',118852077)}
 LANGS={'한국어':'ko','영어':'en','일본어':'ja'}
+VARIANTS={}
 APP.mkdir(parents=True,exist_ok=True); MODELS.mkdir(exist_ok=True)
 class Bridge(QObject):
- trigger=Signal(str); done=Signal(object); error=Signal(str); download_done=Signal(str); startup=Signal(object)
+ trigger=Signal(object); done=Signal(object); error=Signal(str); download_done=Signal(str); startup=Signal(object); download_progress=Signal(str)
 
 def focused_element():
  raw=IUIA().iuia.GetFocusedElement()
@@ -96,15 +99,17 @@ def guess(s):
  raise ValueError('원문 언어를 판별할 수 없습니다.')
 
 def pack_installed(k):
+ if k not in PACKS:return model_packs.installed(MODELS,k)
  return (MODELS/k/'model'/'model.bin').is_file() and (MODELS/k/'sentencepiece.model').is_file()
 
 def path_for(src,dst):
  exists=pack_installed
  if src==dst: raise ValueError('원문과 목표 언어가 같습니다.')
  direct=src+'_'+dst
- if direct in PACKS and exists(direct): return [direct]
+ selected=VARIANTS.get(direct,direct)
+ if selected in model_packs.CATALOG and exists(selected): return [selected]
  if src!='en' and dst!='en':
-  route=[src+'_en','en_'+dst]
+  route=[VARIANTS.get(pair,pair) for pair in (src+'_en','en_'+dst)]
   if all(exists(k) for k in route): return route
  raise ValueError('필요한 언어팩이 없습니다. 설정에서 다운로드하세요.')
 
@@ -118,22 +123,41 @@ def translate_external(executable,text,src,dst):
  if not isinstance(result,str) or not result.strip(): raise ValueError('외부 엔진의 번역 결과가 올바르지 않습니다.')
  return result
 
+class PairedTokenizer:
+ def __init__(self,source,target):self.source=source;self.target=target
+ def encode(self,*args,**kwargs):return self.source.encode(*args,**kwargs)
+ def decode(self,*args,**kwargs):return self.target.decode(*args,**kwargs)
+
+def load_sentencepiece(path):
+ import sentencepiece
+ try:return sentencepiece.SentencePieceProcessor(model_file=str(path))
+ except RuntimeError:
+  # SentencePiece's Windows narrow-path loader can reject Korean user paths.
+  return sentencepiece.SentencePieceProcessor(model_proto=Path(path).read_bytes())
+
 @functools.lru_cache(maxsize=2)
-def _load_model_cached(model_path,model_stamp,tokenizer_stamp):
+def _load_model_cached(model_path,model_stamp,tokenizer_stamp,target_path=None,target_stamp=None):
  import ctranslate2, sentencepiece
  p=Path(model_path)
- tokenizer=sentencepiece.SentencePieceProcessor(model_file=str(p/'sentencepiece.model'))
+ tokenizer=load_sentencepiece(p/('source.spm' if target_path else 'sentencepiece.model'))
+ if target_path:
+  tokenizer=PairedTokenizer(tokenizer,load_sentencepiece(target_path))
  translator=ctranslate2.Translator(str(p/'model'),compute_type='int8',intra_threads=4)
  return tokenizer,translator
 
 def load_model(k):
  p=MODELS/k
  model_stamp=(p/'model'/'model.bin').stat().st_mtime_ns
+ if k not in PACKS:
+  files=model_packs.runtime_files(MODELS,k)
+  return _load_model_cached(str(p),model_stamp,files.source_spm.stat().st_mtime_ns,str(files.target_spm),files.target_spm.stat().st_mtime_ns)
  tokenizer_stamp=(p/'sentencepiece.model').stat().st_mtime_ns
  return _load_model_cached(str(p),model_stamp,tokenizer_stamp)
 
 def translate(text,src,dst):
- route=path_for(src,dst)
+ return translate_route(text,path_for(src,dst))
+
+def translate_route(text,route):
  for k in route:
   sp,tr=load_model(k)
   output=[]
@@ -149,36 +173,12 @@ def translate(text,src,dst):
   if not text.strip(): raise ValueError('번역 결과가 비어 있어 교체하지 않습니다.')
  return text
 
-def install_pack(k):
- digest, size=PACKS[k]; url='https://argos-net.com/v1/translate-'+k+'-1_1.argosmodel'
- fd,tmp=tempfile.mkstemp(dir=APP,suffix='.download'); os.close(fd)
- staging=MODELS/(k+'.partial')
- try:
-  h=hashlib.sha256(); total=0
-  with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 STOOM-Translator/0.5'}),timeout=60) as response,open(tmp,'wb') as f:
-   while True:
-    b=response.read(1024*1024)
-    if not b: break
-    total+=len(b)
-    if total>size: raise ValueError('언어팩 크기가 예상값을 초과했습니다.')
-    f.write(b); h.update(b)
-  if total!=size or h.hexdigest()!=digest: raise ValueError('언어팩 무결성 확인에 실패했습니다.')
-  if staging.exists(): shutil.rmtree(staging)
-  staging.mkdir(); (staging/'model').mkdir()
-  with zipfile.ZipFile(tmp) as z:
-   for sub in ['sentencepiece.model','model/model.bin','model/shared_vocabulary.txt']:
-    entry=z.getinfo(k+'/'+sub)
-    if entry.file_size>160_000_000: raise ValueError('모델 파일 크기가 비정상입니다.')
-    with z.open(entry) as src, open(staging/sub,'wb') as dst: shutil.copyfileobj(src,dst)
-  if (MODELS/k).exists(): shutil.rmtree(MODELS/k)
-  staging.rename(MODELS/k)
- finally:
-  if os.path.exists(tmp): os.unlink(tmp)
-  if staging.exists(): shutil.rmtree(staging)
+def install_pack(k,progress=None):
+ return model_packs.install(k,MODELS,progress=progress)
 
 class Tap:
  def __init__(self,bridge):
-  self.bridge=bridge; self.down=set(); self.last={}; self.used=set()
+  self.bridge=bridge; self.down=set(); self.last={}; self.used=set(); self.pending=set(); self.started={}; self._activity=(0,0.0)
   self.listener=keyboard.Listener(on_press=self.press,on_release=self.release)
  def kind(self,k):
   if k in (keyboard.Key.shift,keyboard.Key.shift_l,keyboard.Key.shift_r): return 'shift'
@@ -196,21 +196,31 @@ class Tap:
  def press(self,k):
   kind=self.kind(k); now=time.monotonic()
   if kind is None:
-   self.last.clear(); self.used.update(self.down)
+   revision,_=self._activity; self._activity=(revision+1,now)
+   self.last.clear(); self.used.update(self.down); self.pending.clear()
    return
   if kind in self.down: return
   if self.down or self.other_key_physically_down(kind):
-   self.used.add(kind); self.last.clear()
+   self.used.update(self.down); self.used.add(kind); self.pending.clear(); self.last.clear()
   if kind not in self.used and kind in self.last and 0 <= now-self.last[kind] <= .35:
-   self.last.clear(); self.used.add(kind); self.bridge.trigger.emit(kind)
-  self.down.add(kind)
+   self.last.clear(); self.pending.add(kind)
+  self.down.add(kind); self.started[kind]=now
+ def activity_snapshot(self):
+  return self._activity
  def release(self,k):
-  kind=self.kind(k)
-  if not kind or kind not in self.down: return
+  kind=self.kind(k); now=time.monotonic()
+  if kind is None:
+   revision,_=self._activity; self._activity=(revision,now)
+   return
+  if kind not in self.down: return
   self.down.discard(kind)
-  if kind not in self.used: self.last[kind]=time.monotonic()
-  else: self.last.pop(kind,None)
-  self.used.discard(kind)
+  valid=kind not in self.used and now-self.started.get(kind,now)<=.35
+  fire=valid and kind in self.pending
+  self.pending.discard(kind); self.started.pop(kind,None); self.used.discard(kind)
+  if fire:
+   self.last.clear(); self.bridge.trigger.emit((kind,self._activity[0],now))
+  elif valid:self.last[kind]=now
+  else:self.last.pop(kind,None)
 
 class App(QWidget):
  def __init__(self):
@@ -234,7 +244,7 @@ class App(QWidget):
    QCheckBox { spacing: 9px; padding: 9px 0; }
   """)
   self.bridge=Bridge(); self.bridge.trigger.connect(self.run_translation); self.bridge.done.connect(self.apply_result); self.bridge.error.connect(self.error); self.bridge.download_done.connect(self.download_done); self.bridge.startup.connect(self.engine_preflight_done)
-  self.busy=False; self.downloading=False; self.external_path=''; self.engine_initializing=True; self._startup_wait_notified=False; self._clipboard_lease=None
+  self.busy=False; self.downloading=False; self.external_path=''; self.engine_initializing=True; self._startup_wait_notified=False; self._clipboard_lease=None; self._pending_input=None; self._quitting=False
   root=QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
   sidebar=QFrame(); sidebar.setObjectName('sidebar'); sidebar.setFixedWidth(220); side=QVBoxLayout(sidebar); side.setContentsMargins(0,30,0,20); side.setSpacing(0)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'
@@ -259,20 +269,29 @@ class App(QWidget):
   info=QLabel('두 키는 각각 다른 언어로 설정하거나 끌 수 있습니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
   packs=page('언어팩 관리','필요한 번역 방향만 선택해 내려받으세요. 번역은 설치 후 오프라인에서 실행됩니다.')
   self.checks={}
-  labels={'en_ja':'영어 → 일본어','en_ko':'영어 → 한국어','ja_en':'일본어 → 영어','ko_en':'한국어 → 영어'}
+  labels={'en_ja':'영어 → 일본어 · Argos','en_ko':'영어 → 한국어 · Argos','ja_en':'일본어 → 영어 · Argos','ko_en':'한국어 → 영어 · Argos',
+          'ko_en_opus_big':'한국어 → 영어 · OPUS-MT Big','en_ko_opus_big':'영어 → 한국어 · OPUS-MT Big'}
   self.pack_labels=labels
-  for k in PACKS:
+  for k in model_packs.CATALOG:
    box=QCheckBox(labels[k]); packs.addWidget(box); self.checks[k]=box
-  self.status=QLabel('각 언어팩은 약 112~115 MiB입니다.'); self.status.setStyleSheet('color:#7d8791;'); self.status.setWordWrap(True); packs.addSpacing(8); packs.addWidget(self.status)
+  self.status=QLabel('Argos: 방향당 약 112~115 MiB 다운로드.\nOPUS-MT Big: 약 741 MiB 다운로드 후 INT8로 변환합니다.\n설치 후 번역 엔진 화면에서 사용할 모델을 선택하세요.'); self.status.setStyleSheet('color:#7d8791;'); self.status.setWordWrap(True); packs.addSpacing(8); packs.addWidget(self.status)
+  self.bridge.download_progress.connect(self.status.setText)
   row=QHBoxLayout(); row.addStretch(); button=QPushButton('선택한 언어팩 다운로드'); button.setObjectName('action'); button.clicked.connect(self.download); row.addWidget(button); packs.addLayout(row); packs.addStretch()
   enginepage=page('번역 엔진','기본 엔진 또는 호환되는 사용자 엔진을 선택합니다.')
   self.engine=QComboBox(); self.engine.addItems(['기본 오프라인 엔진','사용자 외부 엔진']); enginepage.addWidget(self.engine)
+  self.model_choices={}
+  for pair,label in [('ko_en','한국어 → 영어'),('en_ko','영어 → 한국어')]:
+   row=QHBoxLayout();row.addWidget(QLabel(label));box=QComboBox()
+   for spec in model_packs.choices(*pair.split('_')):box.addItem(spec.label,spec.id)
+   row.addWidget(box);enginepage.addLayout(row);self.model_choices[pair]=box
+  model_note=QLabel('방향마다 다른 모델을 선택할 수 있습니다. 미설치 모델은 언어팩 관리에서 먼저 받으세요. 영어↔일본어는 Argos를 사용합니다.\nOPUS-MT: University of Helsinki · CC-BY-4.0 · INT8 변환');model_note.setWordWrap(True);model_note.setStyleSheet('color:#7d8791;');enginepage.addWidget(model_note)
   warning=QLabel('외부 엔진에는 원문이 전달됩니다. 인터넷 사용 여부는 선택한 엔진에 따라 다릅니다.'); warning.setWordWrap(True); warning.setStyleSheet('color:#7d8791;'); enginepage.addWidget(warning)
   row=QHBoxLayout(); engine_btn=QPushButton('엔진 EXE 선택'); engine_btn.setObjectName('secondary'); engine_btn.clicked.connect(self.choose_engine); row.addWidget(engine_btn); row.addStretch(); enginepage.addLayout(row)
   self.engine_path_label=QLabel('선택된 외부 엔진 없음'); self.engine_path_label.setWordWrap(True); self.engine_path_label.setStyleSheet('color:#7d8791;'); enginepage.addWidget(self.engine_path_label); enginepage.addStretch()
   self._engine_dialog=None
-  self.load(); self.refresh(); self.update_engine_label()
+  self.load(); self.update_variants(); self.refresh(); self.update_engine_label()
   for box in list(self.target.values())+[self.source,self.engine]: box.currentTextChanged.connect(self.config_changed)
+  for box in self.model_choices.values():box.currentIndexChanged.connect(self.config_changed)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'; icon=QIcon(str(icon_path)); self.setWindowIcon(icon)
   self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show() if reason==QSystemTrayIcon.ActivationReason.DoubleClick else None); self.tray.show()
   self.select_page(0); self.tap=Tap(self.bridge); self.tap.listener.start(); QTimer.singleShot(0,self.begin_engine_preflight)
@@ -280,12 +299,13 @@ class App(QWidget):
   self.stack.setCurrentIndex(index)
   for i,b in enumerate(self.nav): b.setChecked(i==index)
  def engine_configuration(self):
-  return (self.engine.currentText(),self.source.currentText(),tuple(self.target[k].currentText() for k in ('shift','ctrl')),self.external_path)
+  return (self.engine.currentText(),self.source.currentText(),tuple(self.target[k].currentText() for k in ('shift','ctrl')),self.external_path,
+          tuple((pair,box.currentData()) for pair,box in getattr(self,'model_choices',{}).items()))
  def begin_engine_preflight(self):
   self.engine_initializing=True
   configuration=self.engine_configuration()
   self.engine_readiness.setText('번역 엔진 준비 중…')
-  engine,source,targets,external_path=configuration
+  engine,source,targets,external_path,variants=configuration
   if engine=='사용자 외부 엔진':
    self.engine_preflight_done((configuration,None,'사용자 엔진은 첫 번역 시 실행 상태를 확인합니다.'))
    return
@@ -321,13 +341,19 @@ class App(QWidget):
    d=json.loads((APP/'settings.json').read_text(encoding='utf-8'))
    for k in self.target: self.target[k].setCurrentText(d.get(k,self.target[k].currentText()))
    self.source.setCurrentText(d.get('source','자동')); self.external_path=d.get('external_path',''); self.engine.setCurrentText(d.get('engine','기본 오프라인 엔진'))
+   for pair,box in self.model_choices.items():
+    index=box.findData(d.get('models',{}).get(pair,pair))
+    if index>=0:box.setCurrentIndex(index)
   except (OSError,ValueError): pass
  def save(self,*args):
-  (APP/'settings.json').write_text(json.dumps({**{k:v.currentText() for k,v in self.target.items()},'source':self.source.currentText(),'engine':self.engine.currentText(),'external_path':self.external_path},ensure_ascii=False),encoding='utf-8')
+  (APP/'settings.json').write_text(json.dumps({**{k:v.currentText() for k,v in self.target.items()},'source':self.source.currentText(),'engine':self.engine.currentText(),'external_path':self.external_path,
+                                           'models':{pair:box.currentData() for pair,box in self.model_choices.items()}},ensure_ascii=False),encoding='utf-8')
+ def update_variants(self):
+  VARIANTS.clear();VARIANTS.update({pair:box.currentData() for pair,box in self.model_choices.items()})
  def config_changed(self,*args):
-  self.save()
+  self.update_variants();self.save()
   if not self.engine_initializing:
-   self.engine_readiness.setText('설정이 변경되었습니다. 해당 언어팩은 번역할 때 확인합니다.')
+   self.engine_initializing=True;QTimer.singleShot(0,self.begin_engine_preflight)
  def choose_engine(self):
   if self._engine_dialog is not None:
    self._engine_dialog.raise_(); self._engine_dialog.activateWindow(); return
@@ -348,6 +374,9 @@ class App(QWidget):
   if dialog is not None: dialog.deleteLater()
  def refresh(self):
   for k,box in self.checks.items(): box.setText(self.pack_labels[k]+('   ·   설치됨' if pack_installed(k) else '   ·   미설치'))
+  for box in self.model_choices.values():
+   for i in range(box.count()):
+    k=box.itemData(i);box.setItemText(i,model_packs.CATALOG[k].label+(' · 설치됨' if pack_installed(k) else ' · 미설치'))
  def download(self):
   if self.downloading: return
   chosen=[k for k,b in self.checks.items() if b.isChecked()]
@@ -356,7 +385,7 @@ class App(QWidget):
   def worker():
    try:
     for k in chosen:
-     if not pack_installed(k): install_pack(k)
+     if not pack_installed(k): install_pack(k,progress=lambda msg,p=self.pack_labels[k]:self.bridge.download_progress.emit(p+' · '+msg))
     self.bridge.download_done.emit('언어팩을 확인했습니다. 설치된 항목은 다시 받지 않았습니다.')
    except Exception as e: self.bridge.download_done.emit('언어팩 설치 실패: '+str(e))
   threading.Thread(target=worker,daemon=True).start()
@@ -364,31 +393,83 @@ class App(QWidget):
   self.downloading=False; self.status.setText(s); self.refresh()
   if s.startswith('언어팩을 확인') and not self.engine_initializing:
    self.engine_initializing=True; QTimer.singleShot(0,self.begin_engine_preflight)
- def run_translation(self,key):
-  if self.busy or self.isActiveWindow() or self.target[key].currentText()=='사용 안 함': return
+ def run_translation(self,gesture):
+  key,revision,started=gesture if isinstance(gesture,tuple) else (gesture,self.tap.activity_snapshot()[0],time.monotonic())
+  if self._quitting or self.busy or self.isActiveWindow() or self.target[key].currentText()=='사용 안 함': return
   if self.engine_initializing:
    if not self._startup_wait_notified:
     self._startup_wait_notified=True
     self.tray.showMessage('STOOM','번역 엔진을 준비하고 있습니다.',QSystemTrayIcon.MessageIcon.Information,2000)
    return
   try:
-   native_focus=focus_guard.capture(); hwnd=native_focus.foreground
-   rid,text,context=capture_input()
+   # Carry the hook's revision/time through the Qt queue: text typed after
+   # the gesture must not silently become part of this request.
+   if self.tap.activity_snapshot()[0]!=revision:return
+   native_focus=focus_guard.capture()
    if not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
+   self.busy=True
+   request={'key':key,'focus':native_focus,'rid':None,'configuration':self.engine_configuration(),
+            'gate':input_settle.Settler(started,revision,quiet_seconds=.12,stable_seconds=.08,min_delay=.04),
+            'modifier_activity':0.0,'last_error':''}
+   self._pending_input=request
+   QTimer.singleShot(40,lambda:self.poll_input(request))
+  except Exception as e:self.error(str(e))
+ def cancel_pending_input(self):
+  if self._pending_input is not None:
+   self._pending_input=None; self.busy=False
+ def poll_input(self,request):
+  if self._quitting or self._pending_input is not request:return
+  try:
+   if request['configuration']!=self.engine_configuration() or not focus_guard.unchanged(request['focus']):
+    self.cancel_pending_input(); return
+   now=time.monotonic();revision,last_activity=self.tap.activity_snapshot()
+   if any(ctypes.windll.user32.GetAsyncKeyState(k) & 0x8000 for k in (0x10,0x11,0x12,0x5b,0x5c)):
+    request['modifier_activity']=now
+   last_activity=max(last_activity,request['modifier_activity'])
+   decision=request['gate'].observe(now,revision,last_activity)
+   if decision=='sample':
+    try:
+     rid,text,context=capture_input()
+     if (request['rid'] is not None and rid!=request['rid']) or not focus_guard.unchanged(request['focus']):
+      self.cancel_pending_input(); return
+     request['rid']=rid
+     fingerprint=(rid,context[0],context[1].fingerprint() if context[0]=='range' else range_access.normalize(text))
+     revision,last_key_activity=self.tap.activity_snapshot()
+     decision=request['gate'].observe(time.monotonic(),revision,max(last_key_activity,request['modifier_activity']),fingerprint)
+    except Exception as e:
+     request['last_error']=str(e)
+     # A temporary unavailable range is never a stable valid sample.
+     request['gate'].discard_sample()
+     decision='wait'
+    if decision=='ready':
+     self._pending_input=None
+     self.start_translation(request['key'],request['focus'],rid,text,context)
+     return
+   if decision=='cancel':
+    self.cancel_pending_input(); return
+   if decision=='timeout':
+    self.error(request['last_error'] or '입력 내용이 아직 안정되지 않았습니다. 입력을 마친 뒤 다시 시도해 주세요.'); return
+   QTimer.singleShot(40,lambda:self.poll_input(request))
+  except Exception as e:self.error(str(e))
+ def start_translation(self,key,native_focus,rid,text,context):
+  try:
+   hwnd=native_focus.foreground
+   if not focus_guard.unchanged(native_focus):raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
    if not text.strip(): raise ValueError('현재 입력 영역에 번역할 문장이 없습니다.')
    src=guess(text) if self.source.currentText()=='자동' else LANGS[self.source.currentText()]
    dst=LANGS[self.target[key].currentText()]
    use_external=self.engine.currentText()=='사용자 외부 엔진'; external_path=self.external_path
    if use_external:
     if not external_path or not Path(external_path).is_file(): raise ValueError('사용자 번역 엔진 실행 파일을 선택하세요.')
-   else: path_for(src,dst)
+   else: route=path_for(src,dst)
    self.busy=True
    def worker():
-    try: self.bridge.done.emit((hwnd,rid,text,translate_external(external_path,text,src,dst) if use_external else translate(text,src,dst),context,native_focus))
+    try: self.bridge.done.emit((hwnd,rid,text,translate_external(external_path,text,src,dst) if use_external else translate_route(text,route),context,native_focus))
     except Exception as e: self.bridge.error.emit(str(e))
    threading.Thread(target=worker,daemon=True).start()
   except Exception as e: self.error(str(e))
  def apply_result(self,payload):
+  if self._quitting:return
   try:
    hwnd,rid,old,new,context,native_focus=payload
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
@@ -417,7 +498,8 @@ class App(QWidget):
    if not range_access.unchanged(snapshot,current_rid,wrapper.iface_text): raise ValueError('입력 위치 또는 원문이 바뀌어 교체하지 않았습니다.')
    kb=keyboard.Controller()
    if snapshot.document_mode:
-    snapshot.target.Select()
+    fresh=range_access.capture(current_rid,wrapper.iface_text,True)
+    fresh.target.Select()
    else:
     with kb.pressed(keyboard.Key.ctrl): kb.press('a'); kb.release('a')
    selected_rid,selected_info,selected_wrapper=focused_element()
@@ -436,7 +518,7 @@ class App(QWidget):
   try:
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    current_rid,info,wrapper=focused_element()
-   if current_rid!=rid or snapshot.target.GetText(-1)!=snapshot.text: raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
+   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text): raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
    result=lease.confirm_selection_and_put(snapshot.text,new)
    if result=='pending':
     if remaining<=1: raise ValueError('선택된 글을 복사해 확인하지 못했습니다.')
@@ -444,17 +526,16 @@ class App(QWidget):
    if result!='matched': raise ValueError('실제 선택된 글이 번역 대상과 달라 교체하지 않았습니다.')
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    current_rid,info,wrapper=focused_element()
-   if current_rid!=rid or snapshot.target.GetText(-1)!=snapshot.text: raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
+   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text): raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
    kb=keyboard.Controller()
-   # Re-establish the intended selection immediately before paste: browsers
-   # can collapse UIA selection after it was reported as successful.
-   if snapshot.document_mode:
-    snapshot.target.Select()
-   else:
+   # Ordinary fields are reselected with their keyboard operation. A document
+   # keeps the selection already verified by Ctrl+C; do not reuse a live range
+   # that the provider may have moved after the deliberate selection change.
+   if not snapshot.document_mode:
     with kb.pressed(keyboard.Key.ctrl): kb.press('a'); kb.release('a')
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    current_rid,info,wrapper=focused_element()
-   if current_rid!=rid: raise ValueError('입력창이 바뀌어 교체하지 않았습니다.')
+   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text): raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
    with kb.pressed(keyboard.Key.ctrl): kb.press('v'); kb.release('v')
    QTimer.singleShot(500,lambda:self.finish_range_paste(lease))
   except Exception as e:
@@ -487,9 +568,11 @@ class App(QWidget):
   except Exception:
    self.busy=False
    self.error('번역문은 전달했지만 결과를 확인하지 못했습니다. 입력창을 확인해 주세요.')
- def error(self,msg): self.busy=False; self.status.setText(msg); self.tray.showMessage('STOOM 번역 취소',msg)
+ def error(self,msg):
+  self.cancel_pending_input(); self.busy=False; self.status.setText(msg); self.tray.showMessage('STOOM 번역 취소',msg)
  def closeEvent(self,event): event.ignore(); self.hide()
  def quit(self):
+  self._quitting=True; self.cancel_pending_input()
   if self._clipboard_lease is not None:
    try:self._clipboard_lease.restore()
    except Exception:pass
@@ -497,6 +580,9 @@ class App(QWidget):
   self.tap.listener.stop(); self.tray.hide(); QApplication.quit()
 
 if __name__=='__main__':
+ if len(sys.argv)>1 and sys.argv[1]=='--check-pack':
+  import pack_diagnostics
+  sys.exit(pack_diagnostics.run(sys.argv[2:],sys.modules[__name__]))
  handle=singleton.acquire()
  if not handle:
   ctypes.windll.user32.MessageBoxW(None,'STOOM 번역기가 이미 실행 중입니다. 작업 표시줄의 알림 영역에서 설정을 열 수 있습니다.','STOOM Shift Translator',0x40)

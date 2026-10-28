@@ -7,12 +7,28 @@ class U:
  def GetAsyncKeyState(self,k):return 0
 main.ctypes=types.SimpleNamespace(windll=types.SimpleNamespace(user32=U()))
 class Range:
+ def __init__(self,stale=False):self.stale=stale
  def Select(self):state['selected']+=1
- def GetText(self,n):return 'original' if state['valid'] else 'changed'
-r=Range();pattern=types.SimpleNamespace()
+ def GetText(self,n):
+  if self.stale:raise RuntimeError('saved live range is stale')
+  return state['source']
+class OldRange(Range):
+ def Select(self):raise AssertionError('must select fresh range, not saved live range')
+r=OldRange(True);pattern=types.SimpleNamespace()
 main.focused_element=lambda:((1,2),None,types.SimpleNamespace(iface_text=pattern))
-state={'selected':0,'keys':[],'restore':0,'valid':True,'copy_result':'matched'}
+state={'selected':0,'keys':[],'restore':0,'valid':True,'copy_result':'matched','source':'original','captures':0,'source_checks':0,'late_change':False}
 main.range_access.unchanged=lambda *a:state['valid']
+def fresh_capture(rid,text_pattern,document_mode):
+ assert rid==(1,2) and text_pattern is pattern and document_mode
+ state['captures']+=1
+ return types.SimpleNamespace(target=Range(),text=state['source'])
+def fresh_source_matches(snapshot,rid,text_pattern):
+ assert text_pattern is pattern
+ state['source_checks']+=1
+ if state['late_change'] and state['source_checks']>1:state['source']='changed'
+ return rid==(1,2) and state['source']==snapshot.text
+main.range_access.capture=fresh_capture
+main.range_access.after_selection_source_matches=fresh_source_matches
 class Lease:
  def put(self,t):assert t=='translated'
  def confirm_selection_and_put(self,old,new):assert old=='original' and new=='translated';return state['copy_result']
@@ -40,11 +56,23 @@ state.update(selected=0,keys=[],valid=True,copy_result='mismatch');app.busy=True
 app.paste_range(7,(1,2),snap,'translated',20,'focus')
 while pending:pending.pop(0)()
 assert state['keys']==['a','c'] and app.errors and not app.busy
-state.update(selected=0,keys=[],valid=True,copy_result='matched');app.errors=[];app.busy=True;snap.document_mode=True
+state.update(selected=0,keys=[],valid=True,copy_result='matched',captures=0,source_checks=0);app.errors=[];app.busy=True;snap.document_mode=True
 app.paste_range(7,(1,2),snap,'translated',20,'focus')
 while pending:pending.pop(0)()
-assert state['keys']==['c','v'] and state['selected']==2 and not app.errors
+assert state['keys']==['c','v'] and state['selected']==1 and state['captures']==1 and not app.errors
 state.update(selected=0,keys=[],valid=False);app.busy=True
 app.paste_range(7,(1,2),snap,'translated',20,'focus')
 assert not state['keys'] and state['selected']==0 and app.errors
-print('real-copy verification, reselection, document scope and stale text: PASS')
+
+# A provider source change detected after Ctrl+C blocks Ctrl+V.
+state.update(selected=0,keys=[],valid=True,source='changed',source_checks=0);app.errors=[];app.busy=True;snap.document_mode=False
+app.paste_range(7,(1,2),snap,'translated',20,'focus')
+while pending:pending.pop(0)()
+assert state['keys']==['a','c'] and app.errors and not app.busy
+
+# Source is checked again immediately before pasting, even after the copy matched.
+state.update(selected=0,keys=[],valid=True,source='original',source_checks=0,late_change=True);app.errors=[];app.busy=True
+app.paste_range(7,(1,2),snap,'translated',20,'focus')
+while pending:pending.pop(0)()
+assert state['keys']==['a','c'] and app.errors and not app.busy
+print('fresh document selection once, copied source, stale handles and late source edits: PASS')

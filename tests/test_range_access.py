@@ -9,6 +9,14 @@ class R:
   assert u==4
   x=self.doc[0]; self.start=x.rfind('\n',0,self.start)+1; self.end=x.find('\n',self.end)
   if self.end<0:self.end=len(x)
+ def MoveEndpointByRange(self,a,other,b):
+  point=other.start if b==0 else other.end
+  if a==0:
+   self.start=point
+   if self.start>self.end:self.end=self.start
+  else:
+   self.end=point
+   if self.end<self.start:self.start=self.end
  def CompareEndpoints(self,a,other,b): return (self.start if a==0 else self.end)-(other.start if b==0 else other.end)
 class Array:
  Length=1
