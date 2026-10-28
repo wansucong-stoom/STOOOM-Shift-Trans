@@ -8,6 +8,7 @@ main.ctypes=types.SimpleNamespace(windll=types.SimpleNamespace(user32=U()))
 class Range:
  def Select(self): state['selected']=True
  def CompareEndpoints(self,a,t,b):return 0
+ def GetText(self,n):return 'original'
 r=Range(); selection=types.SimpleNamespace(Length=1,GetElement=lambda i:r)
 pattern=types.SimpleNamespace(GetSelection=lambda:selection)
 main.focused_element=lambda:((1,2),None,types.SimpleNamespace(iface_text=pattern))
@@ -30,7 +31,7 @@ class App:
  def error(self,e):self.errors.append(e);self.busy=False
  paste_range=main.App.paste_range
  finish_range_paste=main.App.finish_range_paste
-app=App();snap=types.SimpleNamespace(target=r)
+app=App();snap=types.SimpleNamespace(target=r,text='original')
 app.paste_range(7,(1,2),snap,'translated',20)
 while pending:pending.pop(0)()
 assert state['selected'] and state['paste'] and state['restore'] and not app.errors and not app.busy

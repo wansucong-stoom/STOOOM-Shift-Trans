@@ -41,3 +41,20 @@ def unchanged(snapshot, runtime_id, text_pattern):
     if current.CompareEndpoints(END,snapshot.caret_or_selection,END) != 0:
         return False
     return snapshot.target.GetText(-1) == snapshot.text
+
+
+def selection_matches(selection, target, expected):
+    """Accept exactly the intended selected text after the target is selected.
+
+    UIA endpoint comparisons can differ across browser providers. Require
+    complete text equality without trimming or partial-match acceptance.
+    """
+    if selection.Length != 1 or not expected:
+        return False
+    import unicodedata
+    def norm(text):
+        return unicodedata.normalize('NFC',text.replace('\r\n','\n').replace('\r','\n'))
+    try:
+        return norm(selection.GetElement(0).GetText(-1)) == norm(expected)
+    except Exception:
+        return False
