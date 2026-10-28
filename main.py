@@ -54,17 +54,19 @@ def capture_input():
  # A document is a structured editor, so operate on selection/paragraph,
  # never the entire document's ValuePattern.
  document_mode=info.control_type == 'Document'
- if not document_mode and value is not None and value.CurrentValue.strip():
-  return rid,value.CurrentValue,('value',None)
  try:
   snapshot=range_access.capture(rid,wrapper.iface_text,document_mode)
   if value is None:
    read_only=snapshot.target.GetAttributeValue(40015)
    if not isinstance(read_only,(bool,int)) or bool(read_only):
     raise ValueError('편집 가능 여부를 확인할 수 없습니다.')
+  return rid,snapshot.text,('range',snapshot)
  except Exception as e:
+  # Some native text boxes offer only ValuePattern. Structured documents
+  # must never be replaced as a whole through ValuePattern.
+  if not document_mode and value is not None and value.CurrentValue.strip():
+   return rid,value.CurrentValue,('value',None)
   raise ValueError('이 편집 영역의 텍스트 범위를 읽을 수 없습니다.') from e
- return rid,snapshot.text,('range',snapshot)
 
 def move_caret_to_end(hwnd, expected_runtime_id):
  """Place the caret at the end when the same focused edit supports TextPattern."""

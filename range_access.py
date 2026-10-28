@@ -20,11 +20,10 @@ def capture(runtime_id, text_pattern, document_mode):
     anchor = selections.GetElement(0).Clone()
     target = anchor.Clone()
     selected = bool(target.GetText(-1))
-    if not selected:
-        if document_mode:
-            target.ExpandToEnclosingUnit(TEXT_UNIT_PARAGRAPH)
-        else:
-            target = text_pattern.DocumentRange.Clone()
+    if not document_mode:
+        target = text_pattern.DocumentRange.Clone()
+    elif not selected:
+        target.ExpandToEnclosingUnit(TEXT_UNIT_PARAGRAPH)
     text = target.GetText(-1)
     if not text or not text.strip():
         raise ValueError('현재 선택 또는 문단의 텍스트를 읽을 수 없습니다.')

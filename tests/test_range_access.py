@@ -23,6 +23,7 @@ doc=['first\nsecond\nthird']; pat=P(doc,R(doc,7,7)); snap=capture((1,2),pat,True
 assert snap.text=='second' and not snap.selected and unchanged(snap,(1,2),pat)
 pat.anchor=R(doc,8,8); assert not unchanged(snap,(1,2),pat)
 pat.anchor=R(doc,7,9); snap=capture((1,2),pat,True); assert snap.text=='ec' and snap.selected
+pat.anchor=R(doc,7,9); snap=capture((1,2),pat,False); assert snap.text==doc[0] and unchanged(snap,(1,2),pat)
 pat.anchor=R(doc,0,0); snap=capture((1,2),pat,False); assert snap.text==doc[0]
 doc[0]='other'; assert not unchanged(snap,(1,2),pat)
 print('selection, paragraph, input field, changed cursor and changed text: PASS')
