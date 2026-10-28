@@ -294,13 +294,13 @@ class App(QWidget):
    self.engine_preflight_done((configuration,None,'사용할 번역 단축키를 설정하세요.'))
    return
   source_code='auto' if source=='자동' else LANGS.get(source,'auto')
-  try: src,dst=engine_readiness.choose_probe(source_code,enabled,path_for)
+  try: probes=engine_readiness.choose_probes(source_code,enabled,path_for)
   except ValueError:
    self.engine_preflight_done((configuration,False,'설정된 번역 방향과 언어팩을 확인하세요.'))
    return
   def worker():
    try:
-    engine_readiness.warm(src,dst,translate)
+    for src,dst in probes: engine_readiness.warm(src,dst,translate)
     self.bridge.startup.emit((configuration,True,''))
    except Exception:
     self.bridge.startup.emit((configuration,False,'번역 엔진을 시작하지 못했습니다. 언어팩과 설정을 확인하세요.'))

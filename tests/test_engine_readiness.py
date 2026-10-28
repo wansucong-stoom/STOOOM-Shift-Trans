@@ -6,6 +6,9 @@ def resolve(a,b):
  return ['model']
 assert e.choose_probe('auto',['en'],resolve)==('ko','en')
 assert e.choose_probe('en',['ja'],resolve)==('en','ja')
+assert e.choose_probes('auto',['en','ja','en'],resolve)==[('ko','en'),('en','ja')]
+try:e.choose_probes('ko',['en','ja'],resolve);raise AssertionError('second target missing')
+except ValueError:pass
 try:e.choose_probe('ja',['ko'],resolve);raise AssertionError('missing pack accepted')
 except ValueError:pass
 assert e.warm('ko','en',lambda text,src,dst:'Hello')=='Hello'
