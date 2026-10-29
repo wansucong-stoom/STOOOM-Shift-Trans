@@ -29,10 +29,10 @@ if errorlevel 1 (
   set "ISCC=ISCC.exe"
 )
 rem Each changed native build needs its own immutable installation directory.
-if not defined STOOM_NATIVE_VERSION set "STOOM_NATIVE_VERSION=0.6.1-20261029.2"
+if not defined STOOM_NATIVE_VERSION set "STOOM_NATIVE_VERSION=0.6.2-20261029.3"
 "%ISCC%" "/DNativeBuildRoot=%~dp0native_tsf\build" "/DComponentVersion=%STOOM_NATIVE_VERSION%" native_tsf\installer.iss
 if errorlevel 1 exit /b 1
 "%ISCC%" "/DTsfSetup=%~dp0native_tsf\dist\STOOM-TextService-%STOOM_NATIVE_VERSION%-setup.exe" installer.iss
 if errorlevel 1 exit /b 1
-echo Build complete: dist\STOOM-Translator-v061-TSF-setup.exe
+echo Build complete: dist\STOOM-Translator-v062-TSF-setup.exe
 pause

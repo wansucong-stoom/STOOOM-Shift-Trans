@@ -7,6 +7,7 @@ import ctypes
 import queue
 import threading
 import unicodedata
+import uuid
 import pythoncom
 import win32clipboard
 
@@ -32,10 +33,13 @@ class ClipboardLease:
     try:
      if op=='put':value=self._put(arg)
      elif op=='confirm':value=self._confirm_and_put(*arg)
+     elif op=='arm_copy':value=self._arm_copy()
+     elif op=='read_copy':value=self._read_copy(arg)
+     elif op=='replace_owned':value=self._replace_owned(*arg)
      else:value=self._restore()
      outcome=(True,value)
     except Exception as e:
-     if op=='put':
+     if op in ('put','arm_copy','replace_owned'):
       try:self._restore()
       except Exception:pass
      outcome=(False,e)
@@ -44,7 +48,7 @@ class ClipboardLease:
      if not cancelled:
       state['result']=outcome
       event.set()
-    if cancelled and op in ('put','confirm'):
+    if cancelled and op in ('put','confirm','arm_copy','replace_owned'):
      try:self._restore()
      except Exception:pass
   finally:
@@ -84,6 +88,61 @@ class ClipboardLease:
  def confirm_selection_and_put(self,expected,translation):
   """Verify the result of Ctrl+C before replacing our clipboard text."""
   return self._call('confirm',(expected,translation))
+ def arm_copy(self):
+  """Replace only our own temporary clipboard with an unpredictable marker."""
+  return self._call('arm_copy')
+ def read_copy(self,owner_pids):
+  """Return only new clipboard text owned by the target application."""
+  return self._call('read_copy',tuple(owner_pids))
+ def _arm_copy(self):
+  marker='\u2063STOOM-COPY-'+uuid.uuid4().hex+'\u2063'
+  if self.ours is None:
+   self._put(marker)
+  else:
+   win32clipboard.OpenClipboard()
+   try:
+    if ctypes.windll.user32.GetClipboardSequenceNumber()!=self.ours:
+     raise RuntimeError('클립보드가 바뀌어 번역을 중단했습니다.')
+    win32clipboard.EmptyClipboard()
+    win32clipboard.SetClipboardText(marker,win32clipboard.CF_UNICODETEXT)
+    self.ours=ctypes.windll.user32.GetClipboardSequenceNumber()
+   finally:win32clipboard.CloseClipboard()
+ def _read_copy(self,owner_pids):
+  win32clipboard.OpenClipboard()
+  try:
+   seq=ctypes.windll.user32.GetClipboardSequenceNumber()
+   if seq==self.ours:return None
+   owner=win32clipboard.GetClipboardOwner()
+   pid=ctypes.c_ulong()
+   if owner:
+    from ctypes import wintypes
+    user=ctypes.WinDLL('user32',use_last_error=True)
+    user.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
+    user.GetWindowThreadProcessId.restype=wintypes.DWORD
+    user.GetWindowThreadProcessId(owner,ctypes.byref(pid))
+   if not owner or pid.value not in owner_pids:
+    raise RuntimeError('다른 프로그램이 클립보드를 변경해 번역을 중단했습니다.')
+   # This is the copy we requested from the focused application. Keep it in
+   # our lease so failure also restores the user's original rich clipboard.
+   self.ours=seq
+   if not win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
+    raise ValueError('선택한 영역에 복사할 텍스트가 없습니다.')
+   return win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+  finally:win32clipboard.CloseClipboard()
+ def replace_owned(self,expected,text):
+  """Replace the verified copy without taking a new clipboard backup."""
+  return self._call('replace_owned',(expected,text))
+ def _replace_owned(self,expected,text):
+  win32clipboard.OpenClipboard()
+  try:
+   if ctypes.windll.user32.GetClipboardSequenceNumber()!=self.ours:
+    raise RuntimeError('클립보드가 바뀌어 번역을 중단했습니다.')
+   if not win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT) or win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)!=expected:
+    raise RuntimeError('복사한 원문이 바뀌어 번역을 중단했습니다.')
+   win32clipboard.EmptyClipboard()
+   win32clipboard.SetClipboardText(text,win32clipboard.CF_UNICODETEXT)
+   self.ours=ctypes.windll.user32.GetClipboardSequenceNumber()
+  finally:win32clipboard.CloseClipboard()
  def _confirm_and_put(self,expected,translation):
   win32clipboard.OpenClipboard()
   try:

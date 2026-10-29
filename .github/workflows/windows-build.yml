@@ -35,15 +35,15 @@ jobs:
         run: |
           $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
           if (!(Test-Path $compiler)) { throw 'Inno Setup 6 is required on this build image.' }
-          $nativeVersion = "0.6.1-ci.$env:GITHUB_RUN_NUMBER"
+          $nativeVersion = "0.6.2-ci.$env:GITHUB_RUN_NUMBER"
           & $compiler "/DNativeBuildRoot=$PWD\native_tsf\build" "/DComponentVersion=$nativeVersion" native_tsf\installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & $compiler "/DTsfSetup=$PWD\native_tsf\dist\STOOM-TextService-$nativeVersion-setup.exe" installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: STOOMShiftTranslator-v061-TSF-experimental
-          path: dist/STOOM-Translator-v061-TSF-setup.exe
+          name: STOOMShiftTranslator-v062-keyboard-experimental
+          path: dist/STOOM-Translator-v062-TSF-setup.exe
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release == true
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: STOOMShiftTranslator-v061-TSF-experimental
+          name: STOOMShiftTranslator-v062-keyboard-experimental
           path: release-files
       - name: Publish verified installer as a GitHub Release
         env:
