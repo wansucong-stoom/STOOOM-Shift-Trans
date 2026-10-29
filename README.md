@@ -66,7 +66,9 @@ OPUS 모델은 University of Helsinki Language Technology Research Group의 [한
 
 ## 빌드
 
-개발 PC에는 Python 3.11이 필요합니다. `build_windows.bat`을 실행하면 `dist/STOOMShiftTranslator-v05.exe`가 생성됩니다. 또는 GitHub Actions의 **Windows build** 워크플로를 수동 실행해 빌드 아티팩트를 받을 수 있습니다. 실행 파일은 현재 별도로 서명되어 있지 않습니다.
+개발 PC에는 Python 3.11이 필요합니다. `build_windows.bat`을 실행하면 `dist/STOOM-Translator-v05-setup.exe`가 생성됩니다. GitHub Actions의 **Windows build** 워크플로는 별도의 단일 실행 파일을 만듭니다. 실행 파일은 현재 별도로 서명되어 있지 않습니다.
+
+단일 파일을 직접 빌드하려면 다음 명령을 사용합니다.
 
 ```powershell
 py -3.11 -m venv .venv
@@ -80,3 +82,4 @@ py -3.11 -m venv .venv
 
 
 진단이 필요한 개발자는 `EXE --check-pack ID MODELS_DIRECTORY REPORT_JSON [VERIFIED_ARCHIVE]`로 키보드 후크와 편집기 조작 없이 해당 팩의 로딩/번역을 확인할 수 있습니다. 마지막 인수를 주면 카탈로그의 크기/SHA-256이 일치하는 원본 아카이브만 먼저 설치합니다. 보고서에는 준비 확인용 예문의 결과만 기록하며 열린 문서의 내용을 읽지 않습니다.
+
