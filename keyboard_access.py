@@ -126,8 +126,10 @@ class Driver:
     def __init__(self,env,lease_factory=clipboard_process.ClipboardLease):
         self.env=env;self.lease_factory=lease_factory
     def guard(self,revision):
-        if not self.env.current() or self.env.activity()[0]!=revision:
-            raise Cancelled('입력 위치나 내용이 바뀌어 번역을 취소했습니다.')
+        if not self.env.current():
+            raise Cancelled('입력창의 포커스가 바뀌어 번역을 취소했습니다.')
+        if self.env.activity()[0]!=revision:
+            raise Cancelled('새 키보드 입력이나 클릭·스크롤이 감지되어 번역을 취소했습니다.')
     def pause(self,seconds,revision):
         end=self.env.now()+seconds
         while self.env.now()<end:

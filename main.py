@@ -204,13 +204,20 @@ def install_pack(k,progress=None):
 
 class Tap:
  def __init__(self,bridge):
-  self.bridge=bridge; self.down=set(); self.last={}; self.used=set(); self.pending=set(); self.started={}; self._activity=(0,0.0)
+  self.bridge=bridge; self.down=set(); self.last={}; self.used=set(); self.pending=set(); self.started={}; self._activity=(0,0.0);self._pointer_buttons=set()
   self.listener=keyboard.Listener(on_press=self.press,on_release=self.release,win32_event_filter=self.event_filter)
-  self.mouse_listener=mouse.Listener(on_click=self.pointer_activity,on_scroll=self.pointer_activity,on_move=self.pointer_activity,win32_event_filter=self.event_filter)
+  self.mouse_listener=mouse.Listener(on_click=self.pointer_click,on_scroll=self.pointer_activity,on_move=self.pointer_move,win32_event_filter=self.event_filter)
  def event_filter(self,msg,data):
   return getattr(data,'dwExtraInfo',0)!=keyboard_access.INPUT_TAG
+ def pointer_move(self,*args):
+  # pynput 1.8 passes (x, y, injected), older versions passed (x, y).
+  # Free motion does not alter a selection. A real held-button drag does.
+  if self._pointer_buttons:self.pointer_activity()
+ def pointer_click(self,x,y,button,pressed,*extra):
+  if pressed:self._pointer_buttons.add(button)
+  else:self._pointer_buttons.discard(button)
+  self.pointer_activity()
  def pointer_activity(self,*args):
-  if len(args)==2:return  # Moving the pointer does not change an edit selection.
   revision,_=self._activity;self._activity=(revision+1,time.monotonic())
   self.last.clear();self.pending.clear()
  def kind(self,k):

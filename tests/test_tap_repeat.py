@@ -62,8 +62,10 @@ print('Repeated taps, release-only trigger, held-key cancellation and activity r
 assert t.event_filter(0,types.SimpleNamespace(dwExtraInfo=main.keyboard_access.INPUT_TAG)) is False
 assert t.event_filter(0,types.SimpleNamespace(dwExtraInfo=0)) is True
 revision=t.activity_snapshot()[0]
-t.pointer_activity(10,20)
+t.pointer_move(10,20)
 assert t.activity_snapshot()[0]==revision, 'pointer movement alone does not change the selection'
+t.pointer_move(10,20,False)
+assert t.activity_snapshot()[0]==revision, 'pynput 1.8 movement includes an injected argument'
 t.pointer_activity(10,20,'left',True)
 assert t.activity_snapshot()[0]==revision+1, 'a real click must cancel a saved selection'
 print('Own injected events ignored; real clicks invalidate selection; pointer movement allowed: PASS')
