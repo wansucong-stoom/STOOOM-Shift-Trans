@@ -382,6 +382,7 @@ def install_archive(pack_id, archive_path, models_dir, *, source=None, converter
         output.mkdir()
         with zipfile.ZipFile(archive_path) as archive:
             index = _index(archive)
+            _report(progress, '언어팩 파일을 풀고 있습니다…')
             if spec.kind == 'argos':
                 _extract_argos(archive, index, spec, output)
             else:

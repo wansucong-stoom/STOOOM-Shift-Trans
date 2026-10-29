@@ -9,7 +9,7 @@ import input_settle
 import model_packs
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal, QTimer
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QCheckBox, QSystemTrayIcon, QMenu, QMessageBox, QFileDialog, QStackedWidget, QFrame
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QCheckBox, QSystemTrayIcon, QMenu, QMessageBox, QFileDialog, QStackedWidget, QFrame, QProgressBar
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from pynput import keyboard
 from pywinauto.uia_defines import IUIA
@@ -278,8 +278,12 @@ class App(QWidget):
    for spec in model_packs.choices(*pair.split('_')): options.addItem(spec.label,spec.id)
    row.addWidget(options,1); packs.addLayout(row); self.checks[pair]=box; self.pack_select[pair]=options
   self.status=QLabel('각 방향에서 사용할 모델을 하나 선택하세요. 내려받을 방향은 체크합니다.\nArgos: 약 112~115 MiB · OPUS-MT Big: 약 741 MiB 다운로드 후 변환'); self.status.setStyleSheet('color:#7d8791;'); self.status.setWordWrap(True); packs.addSpacing(8); packs.addWidget(self.status)
-  self.bridge.download_progress.connect(self.status.setText)
-  row=QHBoxLayout(); row.addStretch(); button=QPushButton('선택한 언어팩 다운로드'); button.setObjectName('action'); button.clicked.connect(self.download); row.addWidget(button); packs.addLayout(row); packs.addStretch()
+  self.pack_engine_status=QLabel('번역 엔진 준비 중…');self.pack_engine_status.setStyleSheet('color:#526b79;');self.pack_engine_status.setWordWrap(True);packs.addWidget(self.pack_engine_status)
+  self.progress=QProgressBar(); self.progress.setVisible(False); packs.addWidget(self.progress)
+  self.progress_time=QLabel(); self.progress_time.setStyleSheet('color:#7d8791;'); self.progress_time.setVisible(False); packs.addWidget(self.progress_time)
+  self.progress_timer=QTimer(self);self.progress_timer.setInterval(1000);self.progress_timer.timeout.connect(self.update_download_time)
+  self.bridge.download_progress.connect(self.show_download_progress)
+  row=QHBoxLayout(); row.addStretch(); self.download_button=QPushButton('선택한 언어팩 다운로드'); self.download_button.setObjectName('action'); self.download_button.clicked.connect(self.download); row.addWidget(self.download_button); packs.addLayout(row); packs.addStretch()
   enginepage=page('번역 엔진','기본 엔진 또는 호환되는 사용자 엔진을 선택합니다.')
   self.engine=QComboBox(); self.engine.addItems(['기본 오프라인 엔진','사용자 외부 엔진']); enginepage.addWidget(self.engine)
   self.model_choices={}
@@ -312,6 +316,7 @@ class App(QWidget):
   self.engine_initializing=True
   configuration=self.engine_configuration()
   self.engine_readiness.setText('번역 엔진 준비 중…')
+  self.pack_engine_status.setText('번역 엔진 준비 중… 잠시 기다려 주세요.')
   engine,source,targets,external_path,variants=configuration
   if engine=='사용자 외부 엔진':
    self.engine_preflight_done((configuration,None,'사용자 엔진은 첫 번역 시 실행 상태를 확인합니다.'))
@@ -339,9 +344,11 @@ class App(QWidget):
   self.engine_initializing=False
   if ready is True:
    self.engine_readiness.setText('번역 엔진 준비 완료')
+   self.pack_engine_status.setText('번역 엔진 준비 완료')
    self.tray.showMessage('STOOM','번역 엔진 준비가 완료되었습니다.',QSystemTrayIcon.MessageIcon.Information,3000)
   else:
    self.engine_readiness.setText(detail)
+   self.pack_engine_status.setText(detail)
    if ready is False:self.tray.showMessage('STOOM 엔진 준비 실패',detail,QSystemTrayIcon.MessageIcon.Warning,4000)
  def load(self):
   try:
@@ -365,7 +372,7 @@ class App(QWidget):
  def config_changed(self,*args):
   self.update_variants();self.save()
   if not self.engine_initializing:
-   self.engine_initializing=True;QTimer.singleShot(0,self.begin_engine_preflight)
+   self.engine_initializing=True;self.pack_engine_status.setText('선택한 번역 엔진을 준비하고 있습니다…');QTimer.singleShot(0,self.begin_engine_preflight)
  def choose_engine(self):
   if self._engine_dialog is not None:
    self._engine_dialog.raise_(); self._engine_dialog.activateWindow(); return
@@ -396,6 +403,8 @@ class App(QWidget):
   chosen=[self.pack_select[k].currentData() if hasattr(self,'pack_select') else k for k,b in self.checks.items() if b.isChecked()]
   if not chosen: self.status.setText('먼저 언어팩을 선택하세요.'); return
   self.downloading=True; self.status.setText('언어팩 다운로드 중입니다. 시간이 걸릴 수 있습니다.')
+  if hasattr(self,'progress'):
+   self._download_started=time.monotonic();self.progress.setRange(0,0);self.progress.show();self.progress_time.show();self.update_download_time();self.progress_timer.start();self.download_button.setEnabled(False);self.download_button.setText('설치 중…')
   def worker():
    try:
     for k in chosen:
@@ -405,8 +414,19 @@ class App(QWidget):
   threading.Thread(target=worker,daemon=True).start()
  def download_done(self,s):
   self.downloading=False; self.status.setText(s); self.refresh()
+  if hasattr(self,'progress'):
+   self.progress_timer.stop();self.progress.hide();self.progress_time.hide();self.download_button.setEnabled(True);self.download_button.setText('선택한 언어팩 다운로드')
   if s.startswith('언어팩을 확인') and not self.engine_initializing:
    self.engine_initializing=True; QTimer.singleShot(0,self.begin_engine_preflight)
+ def show_download_progress(self,message):
+  self.status.setText(message)
+  match=re.search(r'다운로드\s+(\d+)\s*/\s*(\d+)\s*MiB',message)
+  if match and int(match.group(2)):
+   self.progress.setRange(0,100);self.progress.setValue(min(100,round(100*int(match.group(1))/int(match.group(2)))))
+  else:self.progress.setRange(0,0)
+ def update_download_time(self):
+  elapsed=max(0,int(time.monotonic()-self._download_started))
+  self.progress_time.setText(f'진행 중 · {elapsed//60}분 {elapsed%60}초 경과  |  완료될 때까지 기다려 주세요.')
  def run_translation(self,gesture):
   key,revision,started=gesture if isinstance(gesture,tuple) else (gesture,self.tap.activity_snapshot()[0],time.monotonic())
   if self._quitting or self.busy or self.isActiveWindow() or self.target[key].currentText()=='사용 안 함': return
