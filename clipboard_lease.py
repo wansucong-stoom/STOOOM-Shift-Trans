@@ -112,15 +112,18 @@ class ClipboardLease:
   try:
    seq=ctypes.windll.user32.GetClipboardSequenceNumber()
    if seq==self.ours:return None
-   owner=win32clipboard.GetClipboardOwner()
+   # pywin32 treats a legitimate NULL owner as an exception. The native API
+   # returns NULL for an ownerless clipboard without reporting a failure.
+   from ctypes import wintypes
+   user=ctypes.WinDLL('user32',use_last_error=True)
+   user.GetClipboardOwner.argtypes=[];user.GetClipboardOwner.restype=wintypes.HWND
+   owner=user.GetClipboardOwner()
    pid=ctypes.c_ulong()
    if owner:
-    from ctypes import wintypes
-    user=ctypes.WinDLL('user32',use_last_error=True)
     user.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
     user.GetWindowThreadProcessId.restype=wintypes.DWORD
     user.GetWindowThreadProcessId(owner,ctypes.byref(pid))
-   if not owner or pid.value not in owner_pids:
+   if owner and pid.value not in owner_pids:
     raise RuntimeError('다른 프로그램이 클립보드를 변경해 번역을 중단했습니다.')
    # This is the copy we requested from the focused application. Keep it in
    # our lease so failure also restores the user's original rich clipboard.

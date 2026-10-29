@@ -60,13 +60,6 @@ class Windows:
             pid=W.DWORD();self.u.GetWindowThreadProcessId(hwnd,C.byref(pid));self.owner_pids.append(pid.value)
     def current(self):return focus_guard.unchanged(self.focus)
     def safe(self):
-        name=C.create_unicode_buffer(256)
-        self.u.GetClassNameW.argtypes=[W.HWND,W.LPWSTR,C.c_int];self.u.GetClassNameW.restype=C.c_int
-        self.u.GetClassNameW(self.focus.keyboard_window,name,len(name))
-        if name.value.lower()=='edit' or name.value.lower().startswith('richedit'):
-            style=self.u.GetWindowLongW(self.focus.keyboard_window,-16)
-            if style&0x20:raise KeyboardError('보안 입력창입니다.')
-            if style&0x800:raise KeyboardError('읽기 전용 입력창입니다.')
         if self.safety() is False and self.caret_point() is None:
             raise KeyboardError('텍스트 입력 위치를 확인하지 못했습니다.')
     def modifiers(self):return any(self.u.GetAsyncKeyState(v)&0x8000 for v in (SHIFT,CTRL,ALT,0x5b,0x5c))

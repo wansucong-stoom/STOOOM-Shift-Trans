@@ -10,7 +10,9 @@ class User:
 user=User()
 class Function:
     def __call__(self,*args):return user.GetWindowThreadProcessId(*args)
-native=types.SimpleNamespace(GetWindowThreadProcessId=Function())
+class OwnerFunction:
+    def __call__(self):return state['owner']
+native=types.SimpleNamespace(GetWindowThreadProcessId=Function(),GetClipboardOwner=OwnerFunction())
 class Clipboard:
     CF_UNICODETEXT=13
     def OpenClipboard(self):pass
@@ -45,4 +47,7 @@ try:a.read_copy([42])
 except RuntimeError:pass
 else:raise AssertionError('foreign owner accepted')
 assert not a.restore() and state['text']=='user copy'
+a=c.ClipboardLease();a.arm_copy();state.update(seq=state['seq']+1,text='ownerless copy',owner=0)
+assert a.read_copy([42])=='ownerless copy'
+assert a.restore()
 print('Keyboard clipboard: unique markers, fresh target-owned copies, one rich backup, owned replacement and preservation of foreign user copy: PASS')

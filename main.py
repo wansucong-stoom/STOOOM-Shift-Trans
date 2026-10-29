@@ -37,8 +37,7 @@ class Bridge(QObject):
  keyboard_captured=Signal(object); keyboard_applied=Signal(object)
 
 def keyboard_safety():
- # Metadata is only a security check. TextPattern/ValuePattern text is never
- # required by the keyboard path and is never used to validate its copies.
+ # TextPattern/ValuePattern text is never required by the keyboard path.
  import comtypes,comtypes.client
  comtypes.CoInitializeEx(0)
  raw=automation=None
@@ -48,10 +47,10 @@ def keyboard_safety():
   automation=comtypes.client.CreateObject(api.CUIAutomation,interface=api.IUIAutomation)
   raw=automation.GetFocusedElement()
   if raw:
-   if raw.GetCurrentPropertyValue(30019) or raw.GetCurrentPropertyValue(30010) is False:
-    raise ValueError('보안 입력창 또는 사용할 수 없는 입력창입니다.')
-   if raw.GetCurrentPropertyValue(30046) is True:
-    raise ValueError('읽기 전용 입력창입니다.')
+   if raw.GetCurrentPropertyValue(30010) is False:
+    raise ValueError('현재 입력창을 사용할 수 없습니다.')
+   # A document's ValuePattern may be read-only even when the current editing
+   # surface accepts keyboard input. Do not use it to reject the target.
   return raw is not None
  finally:
   raw=automation=None
