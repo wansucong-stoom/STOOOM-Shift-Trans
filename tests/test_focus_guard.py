@@ -6,7 +6,7 @@ class Call:
  def __call__(self,*a):return self.fn(*a)
 class U:
  GetForegroundWindow=Call(lambda:state['fg'])
- GetWindowThreadProcessId=Call(lambda hwnd,pid:state['thread'])
+ GetWindowThreadProcessId=Call(lambda hwnd,pid:state['thread'] if hwnd!=state['fg'] else 99)
  GetGUIThreadInfo=Call(lambda tid,p:(setattr(p._obj,'hwndFocus',state['focus']) or True))
 f.ctypes.WinDLL=lambda *a,**k:U()
 a=f.capture();assert a==f.Focus(10,11,12);assert f.unchanged(a)
@@ -14,4 +14,4 @@ state['focus']=13;assert not f.unchanged(a)
 state['focus']=0
 try:f.capture();raise AssertionError('missing focus accepted')
 except ValueError:pass
-print('Native keyboard focus capture, change and missing focus: PASS')
+print('Native keyboard focus capture, distinct frame/edit threads, change and missing focus: PASS')

@@ -1,9 +1,11 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.exe
 build/
 dist/
 *.spec
+native_tsf/build/
+native_tsf/dist/
 *.argosmodel
 models/
-*.exe

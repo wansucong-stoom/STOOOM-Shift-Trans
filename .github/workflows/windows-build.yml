@@ -12,9 +12,28 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r requirements.txt
+      - name: Build TSF for x64 and x86
+        shell: cmd
+        run: native_tsf\build.cmd
+      - name: Test TSF owned text stores and service lifecycle
+        shell: cmd
+        run: |
+          call native_tsf\tests\run_host.cmd x64 || exit /b 1
+          cd /d "%GITHUB_WORKSPACE%"
+          call native_tsf\tests\run_host.cmd x86 || exit /b 1
       - run: python tests/run_tests.py
-      - run: python -m PyInstaller --noconfirm --onefile --windowed --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator-v05 main.py
+      - run: python -m PyInstaller --noconfirm --onedir --windowed --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
+      - name: Build update installers
+        shell: pwsh
+        run: |
+          $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (!(Test-Path $compiler)) { throw 'Inno Setup 6 is required on this build image.' }
+          $nativeVersion = "0.6.0-ci.$env:GITHUB_RUN_NUMBER"
+          & $compiler "/DNativeBuildRoot=$PWD\native_tsf\build" "/DComponentVersion=$nativeVersion" native_tsf\installer.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $compiler "/DTsfSetup=$PWD\native_tsf\dist\STOOM-TextService-$nativeVersion-setup.exe" installer.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: STOOMShiftTranslator-v05-experimental
-          path: dist/STOOMShiftTranslator-v05.exe
+          name: STOOMShiftTranslator-v06-TSF-experimental
+          path: dist/STOOM-Translator-v06-TSF-setup.exe

@@ -7,6 +7,8 @@ import focus_guard
 import engine_readiness
 import input_settle
 import model_packs
+import tsf_bridge
+import update_control
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QCheckBox, QSystemTrayIcon, QMenu, QMessageBox, QFileDialog, QStackedWidget, QFrame, QProgressBar
@@ -28,6 +30,7 @@ VARIANTS={}
 APP.mkdir(parents=True,exist_ok=True); MODELS.mkdir(exist_ok=True)
 class Bridge(QObject):
  trigger=Signal(object); done=Signal(object); error=Signal(str); download_done=Signal(str); startup=Signal(object); download_progress=Signal(str)
+ tsf_captured=Signal(object); tsf_applied=Signal(object); tsf_status=Signal(str)
 
 def focused_element():
  raw=IUIA().iuia.GetFocusedElement()
@@ -253,7 +256,7 @@ class App(QWidget):
   self.stack=QStackedWidget(); self.nav=[]
   for i,name in enumerate(['단축키 설정','언어팩 관리','번역 엔진']):
    btn=QPushButton(name); btn.setObjectName('nav'); btn.setCheckable(True); btn.clicked.connect(lambda checked,idx=i:self.select_page(idx)); side.addWidget(btn); self.nav.append(btn)
-  side.addStretch(); foot=QLabel('     v0.5  ·  실험판'); foot.setStyleSheet('color:#8a929b; font-size:9pt;'); side.addWidget(foot)
+  side.addStretch(); foot=QLabel('     v0.6  ·  TSF 시험판'); foot.setStyleSheet('color:#8a929b; font-size:9pt;'); side.addWidget(foot)
   root.addWidget(sidebar); root.addWidget(self.stack,1)
   def page(title,description):
    w=QWidget(); layout=QVBoxLayout(w); layout.setContentsMargins(44,40,44,30); layout.setSpacing(12)
@@ -267,6 +270,7 @@ class App(QWidget):
   self.target['shift'].setCurrentText('영어')
   row=QHBoxLayout(); row.addWidget(QLabel('원문 언어')); self.source=QComboBox(); self.source.addItems(['자동','한국어','영어','일본어']); row.addWidget(self.source); settings.addLayout(row); settings.addSpacing(15)
   info=QLabel('두 키는 각각 다른 언어로 설정하거나 끌 수 있습니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
+  self.input_readiness=QLabel('Windows 입력 지원 확인 중…'); self.input_readiness.setWordWrap(True); self.input_readiness.setStyleSheet('color:#7d8791;'); settings.addWidget(self.input_readiness)
   packs=page('언어팩 관리','필요한 번역 방향만 선택해 내려받으세요. 번역은 설치 후 오프라인에서 실행됩니다.')
   self.checks={}; self.pack_select={}
   labels={'en_ja':'영어 → 일본어 · Argos','en_ko':'영어 → 한국어 · Argos','ja_en':'일본어 → 영어 · Argos','ko_en':'한국어 → 영어 · Argos',
@@ -305,7 +309,13 @@ class App(QWidget):
   for box in self.model_choices.values():box.currentIndexChanged.connect(self.config_changed)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'; icon=QIcon(str(icon_path)); self.setWindowIcon(icon)
   self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show_settings); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show_settings() if reason in (QSystemTrayIcon.ActivationReason.Trigger,QSystemTrayIcon.ActivationReason.DoubleClick) else None); self.tray.show()
+  self.tsf=tsf_bridge.Client(int(self.winId()));self._tsf_request=None
+  self.bridge.tsf_captured.connect(self.tsf_captured);self.bridge.tsf_applied.connect(self.tsf_applied);self.bridge.tsf_status.connect(self.input_readiness.setText)
+  self._update_request=update_control.UpdateRequest();self._update_timer=QTimer(self);self._update_timer.setInterval(150);self._update_timer.timeout.connect(self.check_update_request);self._update_timer.start()
   self.select_page(0); self.tap=Tap(self.bridge); self.tap.listener.start(); QTimer.singleShot(0,self.begin_engine_preflight)
+  threading.Thread(target=lambda:self.bridge.tsf_status.emit(tsf_bridge.activate_installed()),daemon=True).start()
+ def check_update_request(self):
+  if self._update_request.requested() and not self.busy and not self.downloading:self.quit()
  def select_page(self,index):
   self.stack.setCurrentIndex(index)
   for i,b in enumerate(self.nav): b.setChecked(i==index)
@@ -445,6 +455,10 @@ class App(QWidget):
    if self.tap.activity_snapshot()[0]!=revision:return
    native_focus=focus_guard.capture()
    if not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
+   if hasattr(self,'tsf'):
+    server=self.tsf.locate(native_focus)
+    if server:
+     self.begin_tsf_capture(key,revision,started,native_focus,server);return
    self.busy=True
    request={'key':key,'focus':native_focus,'rid':None,'configuration':self.engine_configuration(),
             'gate':input_settle.Settler(started,revision,quiet_seconds=.12,stable_seconds=.08,min_delay=.04),
@@ -455,6 +469,51 @@ class App(QWidget):
  def cancel_pending_input(self):
   if self._pending_input is not None:
    self._pending_input=None; self.busy=False
+  if getattr(self,'_tsf_request',None) is not None:
+   self._tsf_request=None;self.busy=False
+ def begin_tsf_capture(self,key,revision,started,focus,server):
+  request={'key':key,'revision':revision,'started':started,'focus':focus,'server':server,'configuration':self.engine_configuration()}
+  self._tsf_request=request;self.busy=True
+  def worker():
+   outcome=None
+   try:
+    deadline=time.monotonic()+1.2
+    while time.monotonic()<deadline:
+     current,last_activity=self.tap.activity_snapshot()
+     if current!=revision or self._tsf_request is not request or not focus_guard.unchanged(focus):
+      outcome=('cancel',None);break
+     if time.monotonic()-last_activity<.12:
+      time.sleep(.025);continue
+     try:
+      snapshot=self.tsf.capture(server,focus);outcome=('ready',snapshot);break
+     except tsf_bridge.Pending:
+      time.sleep(.04)
+    if outcome is None:outcome=('error','입력 조합이 아직 진행 중입니다. 입력을 마친 뒤 다시 시도하세요.')
+   except tsf_bridge.Unavailable:outcome=('fallback',None)
+   except Exception as e:outcome=('error',str(e))
+   self.bridge.tsf_captured.emit((request,outcome))
+  threading.Thread(target=worker,daemon=True).start()
+ def tsf_captured(self,payload):
+  request,(kind,value)=payload
+  if self._quitting or self._tsf_request is not request:return
+  self._tsf_request=None
+  if kind=='cancel' or request['configuration']!=self.engine_configuration() or self.tap.activity_snapshot()[0]!=request['revision'] or not focus_guard.unchanged(request['focus']):
+   self.busy=False;return
+  if kind=='error':self.error(value);return
+  if kind=='fallback':
+   self.input_readiness.setText('현재 입력창 · 기본 입력 호환 경로')
+   legacy={'key':request['key'],'focus':request['focus'],'rid':None,'configuration':request['configuration'],
+           'gate':input_settle.Settler(time.monotonic(),request['revision'],quiet_seconds=.12,stable_seconds=.08,min_delay=.04),
+           'modifier_activity':0.0,'last_error':''}
+   self._pending_input=legacy;QTimer.singleShot(0,lambda:self.poll_input(legacy));return
+  self.input_readiness.setText('현재 입력창 · TSF 직접 교체')
+  self.start_translation(request['key'],request['focus'],(),value.text,('tsf',value))
+ def tsf_applied(self,result):
+  if self._quitting:return
+  success,message=result;self.busy=False
+  if success:
+   self.input_readiness.setText(message)
+  else:self.error(message)
  def poll_input(self,request):
   if self._quitting or self._pending_input is not request:return
   try:
@@ -511,6 +570,13 @@ class App(QWidget):
   try:
    hwnd,rid,old,new,context,native_focus=payload
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
+   if context[0]=='tsf':
+    def worker():
+     try:
+      status=self.tsf.apply(native_focus,context[1],new)
+      self.bridge.tsf_applied.emit((True,'TSF 교체 완료' if status==0 else 'TSF 교체 완료 · 커서 위치는 확인이 필요합니다.'))
+     except Exception as e:self.bridge.tsf_applied.emit((False,str(e)))
+    threading.Thread(target=worker,daemon=True).start();return
    if context[0]=='range':
     self.paste_range(hwnd,rid,context[1],new,20,native_focus)
     return
@@ -617,6 +683,8 @@ class App(QWidget):
  def closeEvent(self,event): event.ignore(); self.hide()
  def quit(self):
   self._quitting=True; self.cancel_pending_input()
+  if hasattr(self,'_update_timer'):self._update_timer.stop()
+  if hasattr(self,'_update_request'):self._update_request.close()
   if self._clipboard_lease is not None:
    try:self._clipboard_lease.restore()
    except Exception:pass
@@ -627,6 +695,9 @@ if __name__=='__main__':
  if len(sys.argv)>1 and sys.argv[1]=='--check-pack':
   import pack_diagnostics
   sys.exit(pack_diagnostics.run(sys.argv[2:],sys.modules[__name__]))
+ if update_control.installation_active():
+  ctypes.windll.user32.MessageBoxW(None,'업데이트 중입니다. 설치 완료 후 실행하세요.','STOOM Shift Translator',0x40)
+  sys.exit(0)
  handle=singleton.acquire()
  if not handle:
   if not singleton.show_existing():

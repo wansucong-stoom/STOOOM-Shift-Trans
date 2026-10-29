@@ -29,7 +29,9 @@ def capture():
  info=GUITHREADINFO();info.cbSize=ctypes.sizeof(GUITHREADINFO)
  if not tid or not user.GetGUIThreadInfo(tid,ctypes.byref(info)) or not info.hwndFocus:
   raise ValueError('키보드 입력 위치를 확인할 수 없습니다.')
- return Focus(int(foreground),int(info.hwndFocus),int(tid))
+ keyboard_tid=user.GetWindowThreadProcessId(info.hwndFocus,None)
+ if not keyboard_tid:raise ValueError('키보드 입력 스레드를 확인할 수 없습니다.')
+ return Focus(int(foreground),int(info.hwndFocus),int(keyboard_tid))
 
 def unchanged(snapshot):
  try:return capture()==snapshot
