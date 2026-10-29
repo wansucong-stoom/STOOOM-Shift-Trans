@@ -268,13 +268,16 @@ class App(QWidget):
   row=QHBoxLayout(); row.addWidget(QLabel('원문 언어')); self.source=QComboBox(); self.source.addItems(['자동','한국어','영어','일본어']); row.addWidget(self.source); settings.addLayout(row); settings.addSpacing(15)
   info=QLabel('두 키는 각각 다른 언어로 설정하거나 끌 수 있습니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
   packs=page('언어팩 관리','필요한 번역 방향만 선택해 내려받으세요. 번역은 설치 후 오프라인에서 실행됩니다.')
-  self.checks={}
+  self.checks={}; self.pack_select={}
   labels={'en_ja':'영어 → 일본어 · Argos','en_ko':'영어 → 한국어 · Argos','ja_en':'일본어 → 영어 · Argos','ko_en':'한국어 → 영어 · Argos',
           'ko_en_opus_big':'한국어 → 영어 · OPUS-MT Big','en_ko_opus_big':'영어 → 한국어 · OPUS-MT Big'}
   self.pack_labels=labels
-  for k in model_packs.CATALOG:
-   box=QCheckBox(labels[k]); packs.addWidget(box); self.checks[k]=box
-  self.status=QLabel('Argos: 방향당 약 112~115 MiB 다운로드.\nOPUS-MT Big: 약 741 MiB 다운로드 후 INT8로 변환합니다.\n설치 후 번역 엔진 화면에서 사용할 모델을 선택하세요.'); self.status.setStyleSheet('color:#7d8791;'); self.status.setWordWrap(True); packs.addSpacing(8); packs.addWidget(self.status)
+  for pair,label in [('ko_en','한국어 → 영어'),('en_ko','영어 → 한국어'),('ja_en','일본어 → 영어'),('en_ja','영어 → 일본어')]:
+   row=QHBoxLayout(); box=QCheckBox(label); box.setMinimumWidth(190); row.addWidget(box)
+   options=QComboBox()
+   for spec in model_packs.choices(*pair.split('_')): options.addItem(spec.label,spec.id)
+   row.addWidget(options,1); packs.addLayout(row); self.checks[pair]=box; self.pack_select[pair]=options
+  self.status=QLabel('각 방향에서 사용할 모델을 하나 선택하세요. 내려받을 방향은 체크합니다.\nArgos: 약 112~115 MiB · OPUS-MT Big: 약 741 MiB 다운로드 후 변환'); self.status.setStyleSheet('color:#7d8791;'); self.status.setWordWrap(True); packs.addSpacing(8); packs.addWidget(self.status)
   self.bridge.download_progress.connect(self.status.setText)
   row=QHBoxLayout(); row.addStretch(); button=QPushButton('선택한 언어팩 다운로드'); button.setObjectName('action'); button.clicked.connect(self.download); row.addWidget(button); packs.addLayout(row); packs.addStretch()
   enginepage=page('번역 엔진','기본 엔진 또는 호환되는 사용자 엔진을 선택합니다.')
@@ -290,6 +293,10 @@ class App(QWidget):
   self.engine_path_label=QLabel('선택된 외부 엔진 없음'); self.engine_path_label.setWordWrap(True); self.engine_path_label.setStyleSheet('color:#7d8791;'); enginepage.addWidget(self.engine_path_label); enginepage.addStretch()
   self._engine_dialog=None
   self.load(); self.update_variants(); self.refresh(); self.update_engine_label()
+  for pair,box in self.model_choices.items():
+   self.pack_select[pair].setCurrentIndex(self.pack_select[pair].findData(box.currentData()))
+   self.pack_select[pair].currentIndexChanged.connect(lambda _,p=pair:self.sync_model_choice(p,True))
+   box.currentIndexChanged.connect(lambda _,p=pair:self.sync_model_choice(p,False))
   for box in list(self.target.values())+[self.source,self.engine]: box.currentTextChanged.connect(self.config_changed)
   for box in self.model_choices.values():box.currentIndexChanged.connect(self.config_changed)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'; icon=QIcon(str(icon_path)); self.setWindowIcon(icon)
@@ -350,6 +357,11 @@ class App(QWidget):
                                            'models':{pair:box.currentData() for pair,box in self.model_choices.items()}},ensure_ascii=False),encoding='utf-8')
  def update_variants(self):
   VARIANTS.clear();VARIANTS.update({pair:box.currentData() for pair,box in self.model_choices.items()})
+ def sync_model_choice(self,pair,from_pack):
+  source=self.pack_select[pair] if from_pack else self.model_choices[pair]
+  target=self.model_choices[pair] if from_pack else self.pack_select[pair]
+  index=target.findData(source.currentData())
+  if index>=0 and target.currentIndex()!=index:target.setCurrentIndex(index)
  def config_changed(self,*args):
   self.update_variants();self.save()
   if not self.engine_initializing:
@@ -373,13 +385,15 @@ class App(QWidget):
   dialog=self._engine_dialog; self._engine_dialog=None
   if dialog is not None: dialog.deleteLater()
  def refresh(self):
-  for k,box in self.checks.items(): box.setText(self.pack_labels[k]+('   ·   설치됨' if pack_installed(k) else '   ·   미설치'))
+  for box in self.pack_select.values():
+   for i in range(box.count()):
+    k=box.itemData(i);box.setItemText(i,model_packs.CATALOG[k].label+(' · 설치됨' if pack_installed(k) else ' · 미설치'))
   for box in self.model_choices.values():
    for i in range(box.count()):
     k=box.itemData(i);box.setItemText(i,model_packs.CATALOG[k].label+(' · 설치됨' if pack_installed(k) else ' · 미설치'))
  def download(self):
   if self.downloading: return
-  chosen=[k for k,b in self.checks.items() if b.isChecked()]
+  chosen=[self.pack_select[k].currentData() if hasattr(self,'pack_select') else k for k,b in self.checks.items() if b.isChecked()]
   if not chosen: self.status.setText('먼저 언어팩을 선택하세요.'); return
   self.downloading=True; self.status.setText('언어팩 다운로드 중입니다. 시간이 걸릴 수 있습니다.')
   def worker():
