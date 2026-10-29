@@ -1,7 +1,13 @@
-import os, sys, json, time, threading, hashlib, zipfile, urllib.request, tempfile, shutil, re, ctypes, subprocess, unicodedata, functools
+import os, sys
+# The windowed clipboard helper must enter before Qt/UIA, hooks, settings, or
+# singleton initialization. Its inherited private pipes are its only interface.
+if __name__=='__main__' and sys.argv[1:]==['--clipboard-worker']:
+ import clipboard_worker
+ sys.exit(clipboard_worker.run())
+import json, time, threading, hashlib, zipfile, urllib.request, tempfile, shutil, re, ctypes, subprocess, unicodedata, functools
 import singleton
 import range_access
-import clipboard_lease
+import clipboard_process as clipboard_lease
 import chunking
 import focus_guard
 import engine_readiness
@@ -37,24 +43,9 @@ class Bridge(QObject):
  keyboard_captured=Signal(object); keyboard_applied=Signal(object)
 
 def keyboard_safety():
- # TextPattern/ValuePattern text is never required by the keyboard path.
- import comtypes,comtypes.client
- comtypes.CoInitializeEx(0)
- raw=automation=None
- try:
-  # A fresh COM object on this worker, not pywinauto's GUI-thread singleton.
-  api=comtypes.client.GetModule('UIAutomationCore.dll')
-  automation=comtypes.client.CreateObject(api.CUIAutomation,interface=api.IUIAutomation)
-  raw=automation.GetFocusedElement()
-  if raw:
-   if raw.GetCurrentPropertyValue(30010) is False:
-    raise ValueError('현재 입력창을 사용할 수 없습니다.')
-   # A document's ValuePattern may be read-only even when the current editing
-   # surface accepts keyboard input. Do not use it to reject the target.
-  return raw is not None
- finally:
-  raw=automation=None
-  comtypes.CoUninitialize()
+ # The common route already verifies the actual Win32 keyboard focus before
+ # every input. It does not need a provider COM apartment just for metadata.
+ return True
 
 def focused_element():
  raw=IUIA().iuia.GetFocusedElement()
@@ -925,7 +916,9 @@ if __name__=='__main__':
    ctypes.windll.user32.MessageBoxW(None,'STOOM 번역기가 이미 실행 중이지만 설정 창을 찾지 못했습니다. 잠시 후 다시 시도하세요.','STOOM Shift Translator',0x40)
   sys.exit(0)
  try:
+  threading.Thread(target=clipboard_lease.warmup,name='STOOM-clipboard-warmup',daemon=True).start()
   app=QApplication(sys.argv); app.setQuitOnLastWindowClosed(False); window=App(); window.show(); code=app.exec()
  finally:
+  clipboard_lease.shutdown()
   singleton.release(handle)
  sys.exit(code)

@@ -21,7 +21,7 @@ with mock.patch.object(comtypes,'CoInitializeEx'),mock.patch.object(comtypes,'Co
      mock.patch.object(comtypes.client,'GetModule',return_value=api), \
      mock.patch.object(comtypes.client,'CreateObject',return_value=automation):
     assert main.keyboard_safety() is True
-assert asked==[30010],asked
+assert asked==[],asked
 env=types.SimpleNamespace(safety=lambda:True)
 main.keyboard_access.Windows.safe(env)
-print('Common route ignores password/read-only metadata while retaining enabled/focus checks: PASS')
+print('Common route requires no UIA COM calls; Win32 focus is checked by the driver: PASS')

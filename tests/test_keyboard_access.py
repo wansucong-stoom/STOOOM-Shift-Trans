@@ -21,7 +21,7 @@ class Env:
         self.text=text;self.selection=selection;self.caret=len(text);self.revision=7
         self.focus=object();self.owner_pids=(12,);self.clock=0.;self.focused=True
         self.events=[];self.leases=[];self.current_lease=None;self.security=True
-        self.after_copy=None;self.fail_space=False;self.pasted=0;self.selected=0
+        self.after_copy=None;self.fail_space=False;self.pasted=0;self.selected=0;self.include_marker=False
     def activity(self):return self.revision,self.clock
     def current(self):return self.focused
     def modifiers(self):return False
@@ -43,7 +43,9 @@ class Env:
             if not self.fail_space:
                 self.text=self.text[:self.caret]+' '+self.text[self.caret:];self.caret+=1
         elif keys==(k.SHIFT,k.LEFT):
-            self.selection=(max(0,self.caret-1),self.caret)
+            if self.selection:
+                start,end=self.selection;self.selection=(start,max(start,end-1));self.caret=end-1
+            else:self.selection=(max(0,self.caret-1),self.caret)
         elif keys==(0x08,):
             assert self.selection
             start,end=self.selection;assert self.text[start:end]==' '
@@ -59,7 +61,8 @@ class Env:
         start=self.text.rfind('\n',0,self.caret)+1
         end=self.text.find('\n',self.caret)
         if end<0:end=len(self.text)
-        self.selection=(start,end);pause(.075)
+        elif self.include_marker:end+=1
+        self.selection=(start,end);self.caret=end;pause(.075)
 
 
 def raises(kind,call):
@@ -88,6 +91,14 @@ assert e.events.count((0x20,))==1 and e.events.count((0x08,))==1
 d.apply(s,'Who am I?')
 assert e.text=='보존할 첫 문단\nWho am I?' and e.pasted==1
 assert (k.CTRL,ord('X')) not in e.events and (k.CTRL,ord('A')) not in e.events
+
+# A paragraph mark selected by a triple click must remain in the original
+# document so its paragraph-level formatting is not replaced by paste.
+e=Env('앞 문단\n번역 문단\n뒤 문단');e.caret=len('앞 문단\n번역 문단');e.include_marker=True
+d=k.Driver(e,e.factory);s=d.capture(7)
+assert s.text=='번역 문단' and e.text=='앞 문단\n번역 문단\n뒤 문단'
+d.apply(s,'Translated paragraph')
+assert e.text=='앞 문단\nTranslated paragraph\n뒤 문단' and e.pasted==1
 
 for change in ('focus','typing','position','source'):
     e=Env('original',(0,8));d=k.Driver(e,e.factory);s=d.capture(7)

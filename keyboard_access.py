@@ -7,7 +7,7 @@ import ctypes as C
 from ctypes import wintypes as W
 from dataclasses import dataclass
 import time
-import clipboard_lease
+import clipboard_process
 import focus_guard
 
 INPUT_TAG = 0x53544F4D
@@ -121,7 +121,7 @@ class Windows:
 
 
 class Driver:
-    def __init__(self,env,lease_factory=clipboard_lease.ClipboardLease):
+    def __init__(self,env,lease_factory=clipboard_process.ClipboardLease):
         self.env=env;self.lease_factory=lease_factory
     def guard(self,revision):
         if not self.env.current() or self.env.activity()[0]!=revision:
@@ -165,6 +165,18 @@ class Driver:
                 self.env.select(lambda:self.guard(revision),lambda s:self.pause(s,revision))
                 text=self.copy(lease,revision)
             if not text or not text.strip():raise KeyboardError('선택·복사할 글이 없습니다. 글을 선택한 뒤 다시 시도하세요.')
+            # Preserve the destination paragraph's existing formatting by
+            # leaving a selected trailing paragraph break in the document.
+            # A selected edge moves differently in some editors: only proceed
+            # if an actual second copy proves exactly the intended shrink.
+            if text.endswith(('\r','\n','\u2028','\u2029')):
+                without_break=text.rstrip('\r\n\u2028\u2029')
+                if not without_break.strip():raise KeyboardError('번역할 글이 없습니다.')
+                self.guard(revision);self.env.chord(SHIFT,LEFT);self.pause(.025,revision)
+                shrunk=self.copy(lease,revision)
+                if shrunk!=without_break:
+                    raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                text=shrunk
             if len(text.encode('utf-16-le'))//2>MAX_SOURCE or '\0' in text or '\ufffc' in text:
                 raise KeyboardError('선택한 텍스트가 너무 길거나 텍스트 이외의 개체가 포함되어 있습니다.')
             # Two actual copies, not a provider's cached range/value.

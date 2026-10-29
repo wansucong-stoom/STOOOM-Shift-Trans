@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: '검증한 버전의 정식 GitHub Release를 게시합니다'
+        description: '사용자 시험용 GitHub prerelease를 게시합니다'
         type: boolean
         default: false
   push:
@@ -42,8 +42,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: STOOMShiftTranslator-v063-keyboard-experimental
-          path: dist/STOOM-Translator-v063-TSF-setup.exe
+          name: STOOMShiftTranslator-v065-keyboard-experimental
+          path: dist/STOOM-Translator-v065-TSF-setup.exe
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release == true
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: STOOMShiftTranslator-v063-keyboard-experimental
+          name: STOOMShiftTranslator-v065-keyboard-experimental
           path: release-files
       - name: Publish verified installer as a GitHub Release
         env:
@@ -81,5 +81,5 @@ jobs:
             exit 0
           fi
           sha256sum "$installer" > release-files/SHA256SUMS.txt
-          gh release create "$tag" "$installer" release-files/SHA256SUMS.txt --draft --target "$RELEASE_COMMIT" --title "STOOM Shift Translator $version" --generate-notes
-          gh release edit "$tag" --draft=false --latest
+          gh release create "$tag" "$installer" release-files/SHA256SUMS.txt --draft --prerelease --target "$RELEASE_COMMIT" --title "STOOM Shift Translator $version - testing" --generate-notes
+          gh release edit "$tag" --draft=false --prerelease --latest=false
