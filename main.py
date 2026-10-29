@@ -304,11 +304,15 @@ class App(QWidget):
   for box in list(self.target.values())+[self.source,self.engine]: box.currentTextChanged.connect(self.config_changed)
   for box in self.model_choices.values():box.currentIndexChanged.connect(self.config_changed)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'; icon=QIcon(str(icon_path)); self.setWindowIcon(icon)
-  self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show() if reason==QSystemTrayIcon.ActivationReason.DoubleClick else None); self.tray.show()
+  self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show_settings); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show_settings() if reason in (QSystemTrayIcon.ActivationReason.Trigger,QSystemTrayIcon.ActivationReason.DoubleClick) else None); self.tray.show()
   self.select_page(0); self.tap=Tap(self.bridge); self.tap.listener.start(); QTimer.singleShot(0,self.begin_engine_preflight)
  def select_page(self,index):
   self.stack.setCurrentIndex(index)
   for i,b in enumerate(self.nav): b.setChecked(i==index)
+ def show_settings(self):
+  if self.isMinimized():self.showNormal()
+  else:self.show()
+  self.raise_();self.activateWindow()
  def engine_configuration(self):
   return (self.engine.currentText(),self.source.currentText(),tuple(self.target[k].currentText() for k in ('shift','ctrl')),self.external_path,
           tuple((pair,box.currentData()) for pair,box in getattr(self,'model_choices',{}).items()))
@@ -619,7 +623,8 @@ if __name__=='__main__':
   sys.exit(pack_diagnostics.run(sys.argv[2:],sys.modules[__name__]))
  handle=singleton.acquire()
  if not handle:
-  ctypes.windll.user32.MessageBoxW(None,'STOOM 번역기가 이미 실행 중입니다. 작업 표시줄의 알림 영역에서 설정을 열 수 있습니다.','STOOM Shift Translator',0x40)
+  if not singleton.show_existing():
+   ctypes.windll.user32.MessageBoxW(None,'STOOM 번역기가 이미 실행 중이지만 설정 창을 찾지 못했습니다. 잠시 후 다시 시도하세요.','STOOM Shift Translator',0x40)
   sys.exit(0)
  try:
   app=QApplication(sys.argv); app.setQuitOnLastWindowClosed(False); window=App(); window.show(); code=app.exec()

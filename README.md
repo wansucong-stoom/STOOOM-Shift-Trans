@@ -60,6 +60,10 @@ OPUS 모델은 University of Helsinki Language Technology Research Group의 [한
 
 설정에서 호환되는 사용자 엔진 EXE를 선택할 수 있습니다. 엔진의 표준 입력에는 UTF-8 JSON `{"text":"안녕하세요","source":"ko","target":"en"}`이 전달되고, 표준 출력에는 `{"translation":"Hello"}`가 필요합니다. 지정 형식을 지원하지 않는 일반 EXE는 그대로 사용할 수 없습니다. 원문은 사용자가 선택한 프로그램에 전달되며 인터넷 사용 여부는 해당 엔진에 달려 있습니다. 이 기능도 실제 외부 엔진과의 통합은 미검증입니다.
 
+## 설치형 빌드
+
+설치형은 프로그램 구성 파일을 사용자 폴더에 설치하므로 매번 단일 EXE를 풀지 않습니다. 설정 창은 트레이 아이콘 클릭 또는 실행 파일 재실행으로 다시 열 수 있습니다. 사용자 언어팩은 별도 로컬 데이터 폴더에서 재사용합니다. `build_windows.bat`은 Python 3.11과 Inno Setup 6이 설치된 개발 PC에서 시험을 실행하고 설치 파일을 생성합니다. 설치 프로그램과 실제 트레이 복원 동작은 대상 PC에서 확인이 필요합니다.
+
 ## 빌드
 
 개발 PC에는 Python 3.11이 필요합니다. `build_windows.bat`을 실행하면 `dist/STOOMShiftTranslator-v05.exe`가 생성됩니다. 또는 GitHub Actions의 **Windows build** 워크플로를 수동 실행해 빌드 아티팩트를 받을 수 있습니다. 실행 파일은 현재 별도로 서명되어 있지 않습니다.
