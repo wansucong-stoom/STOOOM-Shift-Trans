@@ -76,3 +76,14 @@ app.paste_range(7,(1,2),snap,'translated',20,'focus')
 while pending:pending.pop(0)()
 assert state['keys']==['a','c'] and app.errors and not app.busy
 print('fresh document selection once, copied source, stale handles and late source edits: PASS')
+
+# A temporarily stale provider can settle after our selection.
+state.update(selected=0,keys=[],valid=True,source='original',source_checks=0,late_change=False);app.errors=[];app.busy=True
+def delayed(snapshot,rid,text_pattern):
+ state['source_checks']+=1
+ return state['source_checks']>=3 and state['source']==snapshot.text
+main.range_access.after_selection_source_matches=delayed
+app.paste_range(7,(1,2),snap,'translated',20,'focus')
+while pending:pending.pop(0)()
+assert state['keys']==['a','c','a','v'] and not app.errors and not app.busy
+print('temporary provider lag is retried safely: PASS')

@@ -552,19 +552,23 @@ class App(QWidget):
     except Exception: pass
    self._clipboard_lease=None
    self.error(str(e))
- def confirm_range_copy(self,hwnd,rid,snapshot,new,lease,native_focus,remaining):
+ def confirm_range_copy(self,hwnd,rid,snapshot,new,lease,native_focus,remaining,verified=False):
   try:
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    current_rid,info,wrapper=focused_element()
-   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text): raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
-   result=lease.confirm_selection_and_put(snapshot.text,new)
+   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text):
+    if remaining<=1:raise ValueError('선택한 원문과 위치를 확인하지 못해 교체하지 않았습니다.')
+    QTimer.singleShot(100,lambda:self.confirm_range_copy(hwnd,rid,snapshot,new,lease,native_focus,remaining-1,verified));return
+   result='matched' if verified else lease.confirm_selection_and_put(snapshot.text,new)
    if result=='pending':
     if remaining<=1: raise ValueError('선택된 글을 복사해 확인하지 못했습니다.')
     QTimer.singleShot(100,lambda:self.confirm_range_copy(hwnd,rid,snapshot,new,lease,native_focus,remaining-1)); return
    if result!='matched': raise ValueError('실제 선택된 글이 번역 대상과 달라 교체하지 않았습니다.')
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    current_rid,info,wrapper=focused_element()
-   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text): raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
+   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text):
+    if remaining<=1:raise ValueError('선택한 원문과 위치를 확인하지 못해 교체하지 않았습니다.')
+    QTimer.singleShot(100,lambda:self.confirm_range_copy(hwnd,rid,snapshot,new,lease,native_focus,remaining-1,True));return
    kb=keyboard.Controller()
    # Ordinary fields are reselected with their keyboard operation. A document
    # keeps the selection already verified by Ctrl+C; do not reuse a live range
@@ -573,7 +577,9 @@ class App(QWidget):
     with kb.pressed(keyboard.Key.ctrl): kb.press('a'); kb.release('a')
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    current_rid,info,wrapper=focused_element()
-   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text): raise ValueError('입력창의 원문이 바뀌어 교체하지 않았습니다.')
+   if not range_access.after_selection_source_matches(snapshot,current_rid,wrapper.iface_text):
+    if remaining<=1:raise ValueError('선택한 원문과 위치를 확인하지 못해 교체하지 않았습니다.')
+    QTimer.singleShot(100,lambda:self.confirm_range_copy(hwnd,rid,snapshot,new,lease,native_focus,remaining-1,True));return
    with kb.pressed(keyboard.Key.ctrl): kb.press('v'); kb.release('v')
    QTimer.singleShot(500,lambda:self.finish_range_paste(lease))
   except Exception as e:
