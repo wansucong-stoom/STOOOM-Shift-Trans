@@ -629,7 +629,9 @@ class App(QWidget):
     activity=lambda:(-1,0.0) if self._quitting or getattr(self,'_quit_requested',False) or self._keyboard_request is not request else self.tap.activity_snapshot()
     env=keyboard_access.Windows(focus,activity,keyboard_safety)
     driver=keyboard_access.Driver(env)
-    snapshot=driver.capture(revision,commit_space=True)
+    # Selection/navigation can commit composition without modifying the text.
+    # Some editors do not copy a lone space, so it cannot be a prerequisite.
+    snapshot=driver.capture(revision,commit_space=False)
     outcome=(snapshot,'')
    except Exception as error:outcome=(None,str(error))
    finally:self._keyboard_workers-=1

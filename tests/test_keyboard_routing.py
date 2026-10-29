@@ -45,7 +45,7 @@ main.threading=types.SimpleNamespace(Thread=Thread)
 snapshot=main.keyboard_access.Snapshot('안녕하세요',focus,7,None,False)
 class Driver:
     def __init__(self,env):pass
-    def capture(self,revision,commit_space):assert revision==7 and commit_space;return snapshot
+    def capture(self,revision,commit_space):assert revision==7 and not commit_space;return snapshot
     def apply(self,snap,text):assert snap is snapshot and text=='Hello';return 'delivered once'
 main.keyboard_access.Windows=lambda *args:None
 main.keyboard_access.Driver=Driver

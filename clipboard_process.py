@@ -108,6 +108,11 @@ class ClipboardLease:
  def read_copy(self,owner_pids):return self._call('read_copy',list(owner_pids))
  def replace_owned(self,expected,text):return self._call('replace_owned',expected,text)
  def confirm_selection_and_put(self,expected,translation):return self._call('confirm',expected,translation)
+ def keep_translation(self):
+  """Release the backup before Ctrl+V; delayed readers keep seeing the text."""
+  if self._closed:raise ClipboardWorkerError('클립보드 작업이 이미 끝났습니다.')
+  try:return self._call('keep')
+  finally:self._closed=True
  def restore(self):
   if self._closed:return False
   try:return self._call('end')

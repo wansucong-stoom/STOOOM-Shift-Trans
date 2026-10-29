@@ -55,10 +55,12 @@ class Windows:
         self.u.GetAncestor.argtypes=[W.HWND,W.UINT];self.u.GetAncestor.restype=W.HWND
         self.u.GetAsyncKeyState.argtypes=[C.c_int];self.u.GetAsyncKeyState.restype=C.c_short
         self.u.GetWindowLongW.argtypes=[W.HWND,C.c_int];self.u.GetWindowLongW.restype=W.LONG
+        self.u.GetClipboardSequenceNumber.argtypes=[];self.u.GetClipboardSequenceNumber.restype=W.DWORD
         self.owner_pids=[]
         for hwnd in (focus.foreground,focus.keyboard_window):
             pid=W.DWORD();self.u.GetWindowThreadProcessId(hwnd,C.byref(pid));self.owner_pids.append(pid.value)
     def current(self):return focus_guard.unchanged(self.focus)
+    def clipboard_sequence(self):return self.u.GetClipboardSequenceNumber()
     def safe(self):
         if self.safety() is False and self.caret_point() is None:
             raise KeyboardError('텍스트 입력 위치를 확인하지 못했습니다.')
@@ -141,7 +143,7 @@ class Driver:
             if text is not None:return text
             if self.env.now()>=end:return None
             self.pause(.01,revision)
-    def capture(self,revision,commit_space=True):
+    def capture(self,revision,commit_space=False):
         self.guard(revision);self.env.safe()
         end=self.env.now()+.4
         while self.env.modifiers():
@@ -198,8 +200,14 @@ class Driver:
             self.guard(revision)
             if snapshot.anchor is not None and self.env.anchor()!=snapshot.anchor:
                 raise Cancelled('선택 위치가 바뀌어 교체를 취소했습니다.')
+            # Ctrl+V is asynchronous. The target may not read the clipboard
+            # until much later, so restoring an image after a fixed delay can
+            # paste that image instead. Keep the materialized translation.
+            sequence=lease.keep_translation()
+            self.guard(revision)
+            if hasattr(self.env,'clipboard_sequence') and self.env.clipboard_sequence()!=sequence:
+                raise Cancelled('클립보드가 바뀌어 교체를 취소했습니다.')
             self.env.chord(CTRL,ord('V'))
             # Do not paste twice if the target provides no acknowledgement.
-            self.env.sleep(.2)
             return '키보드 경로 · 번역문 전달 완료'
         finally:lease.restore()

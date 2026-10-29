@@ -70,8 +70,20 @@ def rounds():
   actual,payload=read_fixture()
   assert actual==prefix+'original' and all(payload[fmt].startswith(data) for fmt,data in fixture_formats.items())
   assert broker.request('ping')['pid']==first['pid']
+  phase='delayed paste handoff'
+  delayed=client.ClipboardLease(broker)
+  delayed.put(prefix+'delayed translation')
+  assert isinstance(delayed.keep_translation(),int)
+  broker.close()  # Even helper shutdown must not restore the old image.
+  time.sleep(.65)
+  backend._open_clipboard()
+  try:
+   assert win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)==prefix+'delayed translation'
+   assert not win32clipboard.IsClipboardFormatAvailable(8)
+  finally:win32clipboard.CloseClipboard()
   result.put({'ok':True,'rounds':20,'formats':['Unicode','custom','RTF','HTML','DIB'],
-    'marker_copy_replace_rounds':10,'frozen_windowed':len(sys.argv)>1,'same_helper':True})
+    'marker_copy_replace_rounds':10,'delayed_read_milliseconds':650,'text_survives_helper_exit':True,
+    'frozen_windowed':len(sys.argv)>1,'same_helper':True})
  except Exception as error:result.put({'ok':False,'phase':phase,'error':str(error)})
  finally:broker.close()
 

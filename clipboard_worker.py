@@ -82,6 +82,16 @@ def run():
      token=uuid.uuid4().hex;value=token
     else:
      if lease is None or request.get('lease')!=token:raise ValueError('클립보드 작업이 만료되었습니다. 다시 시도하세요.')
+     if operation=='keep':
+      if args:raise ValueError('잘못된 클립보드 요청입니다.')
+      if lease.ours is None or backend.ctypes.windll.user32.GetClipboardSequenceNumber()!=lease.ours:
+       raise ValueError('클립보드가 바뀌어 번역을 중단했습니다.')
+      # All data is already materialized. Drop the backup WITHOUT writing to
+      # the clipboard, before the asynchronous paste command is delivered.
+      sequence=lease.ours;lease=None;token=None
+      result={'id':request_id,'ok':True,'value':sequence}
+      sink.write(json.dumps(result,ensure_ascii=True).encode()+b'\n');sink.flush()
+      continue
      allowed={'put':(lease._put,1),'arm_copy':(lease._arm_copy,0),
        'read_copy':(lease._read_copy,1),'replace_owned':(lease._replace_owned,2),
        'confirm':(lease._confirm_and_put,2),'end':(lease._restore,0)}

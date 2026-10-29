@@ -7,13 +7,14 @@ import keyboard_access as k
 
 
 class Lease:
-    def __init__(self,env):self.env=env;self.text=None;self.armed=False;self.restored=False
+    def __init__(self,env):self.env=env;self.text=None;self.armed=False;self.restored=False;self.kept=False
     def arm_copy(self):self.text=None;self.armed=True;self.env.current_lease=self
     def read_copy(self,pids):return self.text
     def replace_owned(self,expected,text):
         assert self.text==expected
         self.text=text
-    def restore(self):self.restored=True
+    def keep_translation(self):self.kept=True
+    def restore(self):self.restored=not self.kept
 
 
 class Env:
@@ -79,15 +80,15 @@ assert not e.selected and (0x20,) not in e.events
 assert e.leases[-1].restored
 d.apply(s,'Hello 😀')
 assert e.text=='앞 Hello 😀 뒤' and e.caret==len('앞 Hello 😀') and e.pasted==1
-assert all(x.restored for x in e.leases)
+assert e.leases[0].restored and e.leases[-1].kept and not e.leases[-1].restored
 
-# A collapsed caret gets one verified space, removes exactly that space, and
-# selects only its paragraph. No cut and no full-document selection are sent.
+# A collapsed caret selects its paragraph without changing source text.
+# No temporary whitespace, Backspace, cut or full-document select is sent.
 e=Env('보존할 첫 문단\n저는 누구일까요?');d=k.Driver(e,e.factory)
 s=d.capture(7)
 assert s.text=='저는 누구일까요?' and s.selected_automatically
 assert e.text=='보존할 첫 문단\n저는 누구일까요?' and e.selected==1
-assert e.events.count((0x20,))==1 and e.events.count((0x08,))==1
+assert (0x20,) not in e.events and (0x08,) not in e.events
 d.apply(s,'Who am I?')
 assert e.text=='보존할 첫 문단\nWho am I?' and e.pasted==1
 assert (k.CTRL,ord('X')) not in e.events and (k.CTRL,ord('A')) not in e.events
@@ -111,13 +112,27 @@ for change in ('focus','typing','position','source'):
 
 # If the space cannot be proved, Backspace is never sent to the source.
 e=Env('원문');e.fail_space=True;d=k.Driver(e,e.factory)
-raises(k.KeyboardError,lambda:d.capture(7))
+raises(k.KeyboardError,lambda:d.capture(7,commit_space=True))
 assert e.text=='원문' and (0x08,) not in e.events and all(x.restored for x in e.leases)
 
 # An already present trailing space is not proof that our Space was inserted.
 e=Env('원문 ');e.fail_space=True;d=k.Driver(e,e.factory)
-raises(k.KeyboardError,lambda:d.capture(7))
+raises(k.KeyboardError,lambda:d.capture(7,commit_space=True))
 assert e.text=='원문 ' and (0x08,) not in e.events
+
+# Rich editors may not publish whitespace-only selections to the clipboard.
+# That host limitation must not prevent the default paragraph path.
+class WhitespaceHost(Env):
+    def chord(self,*keys):
+        super().chord(*keys)
+        if keys==(k.CTRL,ord('C')) and self.current_lease.text is not None and not self.current_lease.text.strip():
+            self.current_lease.text=None
+e=WhitespaceHost('앞 문단\n번역하는법');d=k.Driver(e,e.factory)
+s=d.capture(7)
+assert s.text=='번역하는법' and e.text=='앞 문단\n번역하는법'
+assert (0x20,) not in e.events and (0x08,) not in e.events
+d.apply(s,'How to translate')
+assert e.text=='앞 문단\nHow to translate' and e.pasted==1
 
 # A provider without a Windows caret cannot prove the temporary insertion;
 # use selection/navigation directly instead of guessing what to erase.
@@ -144,4 +159,4 @@ assert [(e.key.vk,e.key.flags) for e in sent]==[(k.CTRL,0),(ord('V'),0),(ord('V'
 assert all(e.kind==1 and e.key.extra==k.INPUT_TAG for e in sent)
 sent.clear();k.Windows.chord(native,k.SHIFT,k.LEFT)
 assert sent[1].key.flags==1 and sent[2].key.flags==3
-print('Common keyboard path: selection/paragraph, verified temporary space, preserved source, one paste, Unicode, stale input/position/clipboard and secure refusal: PASS')
+print('Common keyboard path: source-preserving paragraph selection, hosts without whitespace-only copy, optional legacy space check, one paste, Unicode and stale-input rejection: PASS')

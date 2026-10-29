@@ -1,7 +1,7 @@
 #define AppName "STOOM Shift Translator"
 #define AppExe "STOOMShiftTranslator.exe"
 #ifndef AppVersion
-#define AppVersion "0.6.5"
+#define AppVersion "0.6.6"
 #endif
 #ifndef BuildRoot
 #define BuildRoot "dist"
@@ -26,7 +26,7 @@ RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=dist
-OutputBaseFilename=STOOM-Translator-v065-TSF-setup
+OutputBaseFilename=STOOM-Translator-v066-TSF-setup
 SetupIconFile=stoom.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2/fast
