@@ -1,11 +1,14 @@
 """Explicit native integration test; briefly activates only our own test window.
 
-Usage: python service_ipc.py PATH_TO_HOST_EXE PATH_TO_PRODUCTION_TSF_DLL
+Usage: python service_ipc.py [--interactive] PATH_TO_HOST_EXE PATH_TO_PRODUCTION_TSF_DLL
 No profile registration, language changes, key injection, clipboard, or user
 document access. Native host restores the prior foreground if still ours.
+With --interactive, the host waits up to 45 seconds for a user click on its
+own window. It does not request or restore foreground focus programmatically.
 Do not add to the ordinary no-focus Python unit test runner.
 """
 import ctypes as C
+import argparse
 from ctypes import wintypes as W
 import json
 from pathlib import Path
@@ -18,8 +21,12 @@ import tsf_bridge as bridge
 
 
 def main():
-    if len(sys.argv)!=3:raise SystemExit(__doc__)
-    host=Path(sys.argv[1]).resolve();dll=Path(sys.argv[2]).resolve()
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--interactive',action='store_true')
+    parser.add_argument('host',type=Path)
+    parser.add_argument('dll',type=Path)
+    args=parser.parse_args()
+    host=args.host.resolve();dll=args.dll.resolve()
     assert host.is_file() and dll.is_file()
     k,u,a=bridge._apis()
     u.CreateWindowExW.argtypes=[W.DWORD,W.LPCWSTR,W.LPCWSTR,W.DWORD,C.c_int,C.c_int,C.c_int,C.c_int,W.HWND,W.HMENU,W.HINSTANCE,C.c_void_p]
@@ -28,10 +35,10 @@ def main():
     u.AllowSetForegroundWindow.argtypes=[W.DWORD];u.AllowSetForegroundWindow.restype=W.BOOL
     sender=u.CreateWindowExW(0,'STATIC','STOOM native test sender',0,0,0,0,0,W.HWND(-3),None,None,None)
     assert sender
-    child=subprocess.Popen([str(host),'--ipc',str(dll)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',creationflags=subprocess.CREATE_NO_WINDOW)
+    child=subprocess.Popen([str(host),'--ipc-interactive' if args.interactive else '--ipc',str(dll)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',creationflags=subprocess.CREATE_NO_WINDOW)
     # This only grants our child permission if Windows already allows this
     # driver to do so. A denied foreground request remains an explicit skip.
-    u.AllowSetForegroundWindow(child.pid)
+    if not args.interactive:u.AllowSetForegroundWindow(child.pid)
     window=None
     def message(code,value=0):
         result=C.c_size_t()
@@ -44,6 +51,11 @@ def main():
         first=child.stdout.readline()
         if not first:raise AssertionError('Native host failed: '+child.stderr.read())
         info=json.loads(first)
+        if info.get('waiting_for_click'):
+            print(json.dumps(info,ensure_ascii=False),flush=True)
+            first=child.stdout.readline()
+            if not first:raise AssertionError('Native host failed while awaiting a click: '+child.stderr.read())
+            info=json.loads(first)
         if info.get('skip'):
             print('SKIP: '+info['reason']);child.wait(timeout=3);return 77
         window=info['window'];focus=SimpleNamespace(foreground=window,keyboard_window=window,thread_id=info['thread'])

@@ -9,10 +9,11 @@ import input_settle
 import model_packs
 import tsf_bridge
 import update_control
+import release_updates
 from pathlib import Path
-from PySide6.QtCore import QObject, Signal, QTimer
+from PySide6.QtCore import QObject, Signal, QTimer, QUrl
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QCheckBox, QSystemTrayIcon, QMenu, QMessageBox, QFileDialog, QStackedWidget, QFrame, QProgressBar
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QDesktopServices
 from pynput import keyboard
 from pywinauto.uia_defines import IUIA
 from pywinauto.uia_element_info import UIAElementInfo
@@ -31,6 +32,7 @@ APP.mkdir(parents=True,exist_ok=True); MODELS.mkdir(exist_ok=True)
 class Bridge(QObject):
  trigger=Signal(object); done=Signal(object); error=Signal(str); download_done=Signal(str); startup=Signal(object); download_progress=Signal(str)
  tsf_captured=Signal(object); tsf_applied=Signal(object); tsf_status=Signal(str)
+ release_event=Signal(object); release_progress=Signal(object)
 
 def focused_element():
  raw=IUIA().iuia.GetFocusedElement()
@@ -109,12 +111,20 @@ def path_for(src,dst):
  exists=pack_installed
  if src==dst: raise ValueError('원문과 목표 언어가 같습니다.')
  direct=src+'_'+dst
- selected=VARIANTS.get(direct,direct)
+ selected=selected_model(direct)
  if selected in model_packs.CATALOG and exists(selected): return [selected]
  if src!='en' and dst!='en':
-  route=[VARIANTS.get(pair,pair) for pair in (src+'_en','en_'+dst)]
+  route=[selected_model(pair) for pair in (src+'_en','en_'+dst)]
   if all(exists(k) for k in route): return route
  raise ValueError('필요한 언어팩이 없습니다. 설정에서 다운로드하세요.')
+
+def default_model(pair):
+ return pair+'_opus_big' if pair in ('ko_en','en_ko') else pair
+
+def selected_model(pair):
+ selected=VARIANTS.get(pair,default_model(pair))
+ spec=model_packs.CATALOG.get(selected)
+ return selected if spec and spec.source_language+'_'+spec.target_language==pair else default_model(pair)
 
 def translate_external(executable,text,src,dst):
  payload=json.dumps({'text':text,'source':src,'target':dst},ensure_ascii=False).encode('utf-8')
@@ -254,9 +264,9 @@ class App(QWidget):
   brandrow=QHBoxLayout(); brandrow.setContentsMargins(20,0,12,0); brandicon=QLabel(); brandicon.setPixmap(QIcon(str(icon_path)).pixmap(32,32)); brandrow.addWidget(brandicon); brand=QLabel('STOOM'); brand.setStyleSheet('font-size: 16pt; font-weight: 700; color: #17394c;'); brandrow.addWidget(brand); brandrow.addStretch(); side.addLayout(brandrow)
   caption=QLabel('     Shift Translator'); caption.setStyleSheet('font-size: 9pt; color: #7b8790;'); side.addWidget(caption); side.addSpacing(34)
   self.stack=QStackedWidget(); self.nav=[]
-  for i,name in enumerate(['단축키 설정','언어팩 관리','번역 엔진']):
+  for i,name in enumerate(['단축키 설정','언어팩 관리','번역 엔진','업데이트']):
    btn=QPushButton(name); btn.setObjectName('nav'); btn.setCheckable(True); btn.clicked.connect(lambda checked,idx=i:self.select_page(idx)); side.addWidget(btn); self.nav.append(btn)
-  side.addStretch(); foot=QLabel('     v0.6  ·  TSF 시험판'); foot.setStyleSheet('color:#8a929b; font-size:9pt;'); side.addWidget(foot)
+  side.addStretch(); foot=QLabel(f'     v{release_updates.VERSION}  ·  {release_updates.BUILD}'); foot.setStyleSheet('color:#8a929b; font-size:9pt;'); side.addWidget(foot)
   root.addWidget(sidebar); root.addWidget(self.stack,1)
   def page(title,description):
    w=QWidget(); layout=QVBoxLayout(w); layout.setContentsMargins(44,40,44,30); layout.setSpacing(12)
@@ -294,13 +304,27 @@ class App(QWidget):
   for pair,label in [('ko_en','한국어 → 영어'),('en_ko','영어 → 한국어')]:
    row=QHBoxLayout();row.addWidget(QLabel(label));box=QComboBox()
    for spec in model_packs.choices(*pair.split('_')):box.addItem(spec.label,spec.id)
+   box.setCurrentIndex(box.findData(default_model(pair)))
    row.addWidget(box);enginepage.addLayout(row);self.model_choices[pair]=box
   model_note=QLabel('방향마다 다른 모델을 선택할 수 있습니다. 미설치 모델은 언어팩 관리에서 먼저 받으세요. 영어↔일본어는 Argos를 사용합니다.\nOPUS-MT: University of Helsinki · CC-BY-4.0 · INT8 변환');model_note.setWordWrap(True);model_note.setStyleSheet('color:#7d8791;');enginepage.addWidget(model_note)
   warning=QLabel('외부 엔진에는 원문이 전달됩니다. 인터넷 사용 여부는 선택한 엔진에 따라 다릅니다.'); warning.setWordWrap(True); warning.setStyleSheet('color:#7d8791;'); enginepage.addWidget(warning)
   row=QHBoxLayout(); engine_btn=QPushButton('엔진 EXE 선택'); engine_btn.setObjectName('secondary'); engine_btn.clicked.connect(self.choose_engine); row.addWidget(engine_btn); row.addStretch(); enginepage.addLayout(row)
   self.engine_path_label=QLabel('선택된 외부 엔진 없음'); self.engine_path_label.setWordWrap(True); self.engine_path_label.setStyleSheet('color:#7d8791;'); enginepage.addWidget(self.engine_path_label); enginepage.addStretch()
+  updates=page('업데이트',f'현재 버전 {release_updates.VERSION} · 빌드 {release_updates.BUILD}')
+  self.check_updates=QCheckBox('새 버전 자동 확인');self.check_updates.setChecked(True);updates.addWidget(self.check_updates)
+  self.auto_install_updates=QCheckBox('새 버전 자동 설치');updates.addWidget(self.auto_install_updates)
+  update_note=QLabel('기존 프로그램 위에 업데이트하며 받은 언어팩과 설정은 유지됩니다.\n자동 설치를 켜면 번역과 언어팩 다운로드가 끝난 뒤 설치합니다.\nWindows 입력 지원(TSF)을 업데이트할 때 관리자 승인이 필요할 수 있습니다.');update_note.setWordWrap(True);update_note.setStyleSheet('color:#7d8791;');updates.addWidget(update_note)
+  self.release_status=QLabel('새 버전은 GitHub에서 확인합니다.');self.release_status.setWordWrap(True);updates.addWidget(self.release_status)
+  self.release_progress=QProgressBar();self.release_progress.hide();updates.addWidget(self.release_progress)
+  update_actions=QHBoxLayout();self.release_check_button=QPushButton('지금 확인');self.release_check_button.setObjectName('secondary');self.release_check_button.clicked.connect(lambda:self.check_release(True));update_actions.addWidget(self.release_check_button)
+  self.release_install_button=QPushButton('다운로드 후 업데이트');self.release_install_button.setObjectName('action');self.release_install_button.setEnabled(False);self.release_install_button.clicked.connect(lambda:self.download_release(True));update_actions.addWidget(self.release_install_button);updates.addLayout(update_actions)
+  self.release_notes_button=QPushButton('변경 내용 보기');self.release_notes_button.setObjectName('secondary');self.release_notes_button.setEnabled(False);self.release_notes_button.clicked.connect(self.open_release_notes);updates.addWidget(self.release_notes_button);updates.addStretch()
+  self._release_check_inflight=False;self._release_download_inflight=False;self._release_installing=False;self._release_candidate=None;self._release_ready=None;self._release_notified='';self._saved_settings={}
+  self.bridge.release_event.connect(self.release_event);self.bridge.release_progress.connect(self.release_download_progress)
+  self._release_wait_timer=QTimer(self);self._release_wait_timer.setInterval(1000);self._release_wait_timer.timeout.connect(self.install_ready_release)
   self._engine_dialog=None
   self.load(); self.update_variants(); self.refresh(); self.update_engine_label()
+  self.check_updates.toggled.connect(lambda checked:self.release_preferences_changed('check',checked));self.auto_install_updates.toggled.connect(lambda checked:self.release_preferences_changed('install',checked))
   for pair,box in self.model_choices.items():
    self.pack_select[pair].setCurrentIndex(self.pack_select[pair].findData(box.currentData()))
    self.pack_select[pair].currentIndexChanged.connect(lambda _,p=pair:self.sync_model_choice(p,True))
@@ -308,12 +332,15 @@ class App(QWidget):
   for box in list(self.target.values())+[self.source,self.engine]: box.currentTextChanged.connect(self.config_changed)
   for box in self.model_choices.values():box.currentIndexChanged.connect(self.config_changed)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'; icon=QIcon(str(icon_path)); self.setWindowIcon(icon)
-  self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show_settings); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show_settings() if reason in (QSystemTrayIcon.ActivationReason.Trigger,QSystemTrayIcon.ActivationReason.DoubleClick) else None); self.tray.show()
+  self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show_settings);menu.addAction('업데이트 확인',self.show_update_page); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show_settings() if reason in (QSystemTrayIcon.ActivationReason.Trigger,QSystemTrayIcon.ActivationReason.DoubleClick) else None); self.tray.show()
+  self.tray.setToolTip(f'STOOM Shift Translator {release_updates.VERSION} ({release_updates.BUILD})')
   self.tsf=tsf_bridge.Client(int(self.winId()));self._tsf_request=None
   self.bridge.tsf_captured.connect(self.tsf_captured);self.bridge.tsf_applied.connect(self.tsf_applied);self.bridge.tsf_status.connect(self.input_readiness.setText)
   self._update_request=update_control.UpdateRequest();self._update_timer=QTimer(self);self._update_timer.setInterval(150);self._update_timer.timeout.connect(self.check_update_request);self._update_timer.start()
   self.select_page(0); self.tap=Tap(self.bridge); self.tap.listener.start(); QTimer.singleShot(0,self.begin_engine_preflight)
   threading.Thread(target=lambda:self.bridge.tsf_status.emit(tsf_bridge.activate_installed()),daemon=True).start()
+  self._release_start_timer=QTimer(self);self._release_start_timer.setSingleShot(True);self._release_start_timer.timeout.connect(lambda:self.check_release(False));self._release_start_timer.start(15000)
+  self._release_timer=QTimer(self);self._release_timer.setInterval(6*60*60*1000);self._release_timer.timeout.connect(lambda:self.check_release(False));self._release_timer.start()
  def check_update_request(self):
   if self._update_request.requested() and not self.busy and not self.downloading:self.quit()
  def select_page(self,index):
@@ -323,6 +350,111 @@ class App(QWidget):
   if self.isMinimized():self.showNormal()
   else:self.show()
   self.raise_();self.activateWindow()
+ def show_update_page(self):
+  self.select_page(3);self.show_settings();self.check_release(True)
+ def open_release_notes(self):
+  if self._release_candidate:QDesktopServices.openUrl(QUrl(self._release_candidate.url))
+ def release_preferences_changed(self,which,checked):
+  if which=='install' and checked and not self.check_updates.isChecked():
+   self.check_updates.blockSignals(True);self.check_updates.setChecked(True);self.check_updates.blockSignals(False)
+  if which=='check' and not checked:
+   self.auto_install_updates.blockSignals(True);self.auto_install_updates.setChecked(False);self.auto_install_updates.blockSignals(False)
+  self.save()
+  if self._quitting:return
+  if self.auto_install_updates.isChecked():
+   if self._release_ready:self.install_ready_release()
+   elif self._release_candidate:self.download_release(False)
+   else:self.check_release(False)
+  elif self._release_ready and not self._release_ready['manual']:
+   self._release_wait_timer.stop();self.release_status.setText('업데이트를 내려받았습니다. 자동 설치가 꺼져 있어 설치하지 않았습니다.');self.release_install_button.setEnabled(True)
+ def check_release(self,manual=False):
+  if self._quitting or self._release_check_inflight or self._release_download_inflight or self._release_installing:return
+  if not manual and not self.check_updates.isChecked():return
+  self._release_check_inflight=True;self.release_check_button.setEnabled(False);self.release_install_button.setEnabled(False);self.release_status.setText('새 버전 확인 중…')
+  def worker():
+   if self._quitting:return
+   try:event={'kind':'checked','manual':manual,'release':release_updates.check_latest(current_version=release_updates.VERSION),'error':''}
+   except Exception as error:event={'kind':'checked','manual':manual,'release':None,'error':str(error)}
+   if not self._quitting:self.bridge.release_event.emit(event)
+  threading.Thread(target=worker,daemon=True).start()
+ def download_release(self,manual=False):
+  if self._quitting or self._release_check_inflight or self._release_download_inflight or self._release_installing:return
+  if not manual and not(self.check_updates.isChecked() and self.auto_install_updates.isChecked()):return
+  release=self._release_candidate
+  if release is None:return
+  if self._release_ready and self._release_ready['release'].tag==release.tag:
+   if manual:self._release_ready['manual']=True
+   self.install_ready_release();return
+  self._release_download_inflight=True;self.release_check_button.setEnabled(False);self.release_install_button.setEnabled(False);self.release_progress.setRange(0,0);self.release_progress.show();self.release_status.setText(f'{release.version} 다운로드 중…')
+  def worker():
+   if self._quitting:return
+   def progress(done,total):
+    if not self._quitting:self.bridge.release_progress.emit((release.tag,done,total))
+   try:event={'kind':'downloaded','release':release,'manual':manual,'path':release_updates.download_verified(release,APP/'updates',progress=progress),'error':''}
+   except Exception as error:event={'kind':'downloaded','release':release,'manual':manual,'path':None,'error':str(error)}
+   if not self._quitting:self.bridge.release_event.emit(event)
+  threading.Thread(target=worker,daemon=True).start()
+ def release_download_progress(self,payload):
+  if self._quitting or not self._release_download_inflight:return
+  tag,done,total=payload
+  if not self._release_candidate or self._release_candidate.tag!=tag:return
+  if total>0:self.release_progress.setRange(0,100);self.release_progress.setValue(min(100,max(0,round(done*100/total))))
+  self.release_status.setText(f'업데이트 다운로드 중 · {done/1048576:.1f} / {total/1048576:.1f} MiB')
+ def release_event(self,event):
+  if self._quitting:return
+  kind=event['kind']
+  if kind=='checked':
+   self._release_check_inflight=False
+   if self._release_installing:return
+   self.release_check_button.setEnabled(True)
+   if event['error']:
+    self.release_status.setText('새 버전 확인 실패: '+event['error']);self.release_install_button.setEnabled(self._release_candidate is not None)
+    if self._release_ready:self.install_ready_release()
+    return
+   release=event['release'];self._release_candidate=release
+   if release is None:
+    self._release_ready=None;self._release_wait_timer.stop();self.release_install_button.setEnabled(False);self.release_notes_button.setEnabled(False);self.release_status.setText('새 업데이트가 없습니다.');return
+   if self._release_ready and self._release_ready['release'].tag!=release.tag:self._release_ready=None;self._release_wait_timer.stop()
+   self.release_status.setText(f'새 버전 {release.version}을 사용할 수 있습니다.');self.release_install_button.setEnabled(True);self.release_notes_button.setEnabled(True)
+   if self._release_notified!=release.tag and(event['manual'] or self.check_updates.isChecked()):
+    self._release_notified=release.tag;self.save();self.tray.showMessage('STOOM 업데이트',f'새 버전 {release.version}이 있습니다. 설정의 업데이트에서 설치할 수 있습니다.',QSystemTrayIcon.MessageIcon.Information,4000)
+   if self._release_ready:self.install_ready_release()
+   elif self.auto_install_updates.isChecked() and self.check_updates.isChecked():self.download_release(False)
+  elif kind=='downloaded':
+   self._release_download_inflight=False;self.release_check_button.setEnabled(True);self.release_install_button.setEnabled(True);self.release_progress.hide()
+   if event['error']:self.release_status.setText('업데이트 다운로드 실패: '+event['error']);return
+   self._release_ready={'release':event['release'],'path':event['path'],'manual':event['manual']};self.release_install_button.setText('다운로드한 업데이트 설치')
+   self.install_ready_release()
+  elif kind=='launched':
+   if event['error']:
+    self._release_installing=False;self.check_updates.setEnabled(True);self.auto_install_updates.setEnabled(True);self.release_check_button.setEnabled(True);self.release_install_button.setEnabled(True);self.release_status.setText('업데이트 설치를 시작하지 못했습니다: '+event['error'])
+   else:self.release_status.setText('설치 프로그램을 실행했습니다. 업데이트 요청을 기다리고 있습니다.')
+  elif kind=='installer_exited':
+   self._release_installing=False;self.check_updates.setEnabled(True);self.auto_install_updates.setEnabled(True);self.release_check_button.setEnabled(True);self.release_install_button.setEnabled(True)
+   self.release_status.setText('설치 프로그램이 종료되었습니다. 업데이트가 완료되었다면 새 버전을 실행하세요.' if event['code']==0 else '업데이트가 완료되지 않았습니다. 다시 설치할 수 있습니다.')
+ def release_idle(self):
+  return not(self.busy or self.downloading or self.engine_initializing or self._clipboard_lease is not None or self._pending_input is not None or getattr(self,'_tsf_request',None) is not None)
+ def install_ready_release(self):
+  if self._quitting or self._release_installing or not self._release_ready:return
+  ready=self._release_ready
+  if not ready['manual'] and not(self.check_updates.isChecked() and self.auto_install_updates.isChecked()):
+   self._release_wait_timer.stop();self.release_status.setText('업데이트를 내려받았습니다. 자동 설치가 꺼져 있어 설치하지 않았습니다.');return
+  if self._release_check_inflight or self._release_download_inflight:
+   self._release_wait_timer.start();return
+  if not self.release_idle():
+   self.release_status.setText('업데이트 준비 완료 · 번역과 언어팩 작업이 끝나면 설치합니다.');self._release_wait_timer.start();return
+  self._release_wait_timer.stop();self._release_installing=True;self.check_updates.setEnabled(False);self.auto_install_updates.setEnabled(False);self.release_check_button.setEnabled(False);self.release_install_button.setEnabled(False);self.release_status.setText('업데이트 파일 확인 후 설치를 시작합니다…')
+  def worker():
+   if self._quitting:return
+   try:
+    # Revalidation and process creation can perform disk IO. Keep both off Qt.
+    process=release_updates.launch_installer(ready['path'])
+    if not self._quitting:self.bridge.release_event.emit({'kind':'launched','error':''})
+    code=process.wait()
+    if not self._quitting:self.bridge.release_event.emit({'kind':'installer_exited','code':code})
+   except Exception as error:
+    if not self._quitting:self.bridge.release_event.emit({'kind':'launched','error':str(error)})
+  threading.Thread(target=worker,daemon=True).start()
  def engine_configuration(self):
   return (self.engine.currentText(),self.source.currentText(),tuple(self.target[k].currentText() for k in ('shift','ctrl')),self.external_path,
           tuple((pair,box.currentData()) for pair,box in getattr(self,'model_choices',{}).items()))
@@ -367,15 +499,21 @@ class App(QWidget):
  def load(self):
   try:
    d=json.loads((APP/'settings.json').read_text(encoding='utf-8'))
+   if not isinstance(d,dict):return
+   self._saved_settings=d.copy()
    for k in self.target: self.target[k].setCurrentText(d.get(k,self.target[k].currentText()))
    self.source.setCurrentText(d.get('source','자동')); self.external_path=d.get('external_path',''); self.engine.setCurrentText(d.get('engine','기본 오프라인 엔진'))
    for pair,box in self.model_choices.items():
-    index=box.findData(d.get('models',{}).get(pair,pair))
-    if index>=0:box.setCurrentIndex(index)
+    models=d.get('models',{});models=models if isinstance(models,dict) else {}
+    index=box.findData(models.get(pair,default_model(pair)))
+    box.setCurrentIndex(index if index>=0 else box.findData(default_model(pair)))
+   self.check_updates.setChecked(d.get('check_updates',True) is not False);self.auto_install_updates.setChecked(d.get('auto_install_updates',False) is True and self.check_updates.isChecked())
+   self._release_notified=d.get('notified_release','') if isinstance(d.get('notified_release',''),str) else ''
   except (OSError,ValueError): pass
  def save(self,*args):
-  (APP/'settings.json').write_text(json.dumps({**{k:v.currentText() for k,v in self.target.items()},'source':self.source.currentText(),'engine':self.engine.currentText(),'external_path':self.external_path,
-                                           'models':{pair:box.currentData() for pair,box in self.model_choices.items()}},ensure_ascii=False),encoding='utf-8')
+  settings={**getattr(self,'_saved_settings',{}),**{k:v.currentText() for k,v in self.target.items()},'source':self.source.currentText(),'engine':self.engine.currentText(),'external_path':self.external_path,'models':{pair:box.currentData() for pair,box in self.model_choices.items()}}
+  if hasattr(self,'check_updates'):settings.update(check_updates=self.check_updates.isChecked(),auto_install_updates=self.auto_install_updates.isChecked(),notified_release=self._release_notified)
+  temporary=APP/'settings.json.tmp';temporary.write_text(json.dumps(settings,ensure_ascii=False),encoding='utf-8');temporary.replace(APP/'settings.json');self._saved_settings=settings
  def update_variants(self):
   VARIANTS.clear();VARIANTS.update({pair:box.currentData() for pair,box in self.model_choices.items()})
  def sync_model_choice(self,pair,from_pack):
@@ -413,7 +551,7 @@ class App(QWidget):
    for i in range(box.count()):
     k=box.itemData(i);box.setItemText(i,model_packs.CATALOG[k].label+(' · 설치됨' if pack_installed(k) else ' · 미설치'))
  def download(self):
-  if self.downloading: return
+  if self.downloading or getattr(self,'_release_installing',False): return
   chosen=[self.pack_select[k].currentData() if hasattr(self,'pack_select') else k for k,b in self.checks.items() if b.isChecked()]
   if not chosen: self.status.setText('먼저 언어팩을 선택하세요.'); return
   self.downloading=True; self.status.setText('언어팩 다운로드 중입니다. 시간이 걸릴 수 있습니다.')
@@ -443,7 +581,7 @@ class App(QWidget):
   self.progress_time.setText(f'진행 중 · {elapsed//60}분 {elapsed%60}초 경과  |  완료될 때까지 기다려 주세요.')
  def run_translation(self,gesture):
   key,revision,started=gesture if isinstance(gesture,tuple) else (gesture,self.tap.activity_snapshot()[0],time.monotonic())
-  if self._quitting or self.busy or self.isActiveWindow() or self.target[key].currentText()=='사용 안 함': return
+  if self._quitting or getattr(self,'_release_installing',False) or self.busy or self.isActiveWindow() or self.target[key].currentText()=='사용 안 함': return
   if self.engine_initializing:
    if not self._startup_wait_notified:
     self._startup_wait_notified=True
@@ -683,6 +821,8 @@ class App(QWidget):
  def closeEvent(self,event): event.ignore(); self.hide()
  def quit(self):
   self._quitting=True; self.cancel_pending_input()
+  for name in ('_release_start_timer','_release_timer','_release_wait_timer'):
+   if hasattr(self,name):getattr(self,name).stop()
   if hasattr(self,'_update_timer'):self._update_timer.stop()
   if hasattr(self,'_update_request'):self._update_request.close()
   if self._clipboard_lease is not None:
@@ -695,6 +835,9 @@ if __name__=='__main__':
  if len(sys.argv)>1 and sys.argv[1]=='--check-pack':
   import pack_diagnostics
   sys.exit(pack_diagnostics.run(sys.argv[2:],sys.modules[__name__]))
+ if '--after-update' in sys.argv:
+  deadline=time.monotonic()+15
+  while update_control.installation_active() and time.monotonic()<deadline:time.sleep(.05)
  if update_control.installation_active():
   ctypes.windll.user32.MessageBoxW(None,'업데이트 중입니다. 설치 완료 후 실행하세요.','STOOM Shift Translator',0x40)
   sys.exit(0)

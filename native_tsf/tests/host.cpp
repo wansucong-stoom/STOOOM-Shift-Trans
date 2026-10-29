@@ -322,8 +322,9 @@ static void ForeignContextTest(){
     Require(first.store->writes==0&&second.store->writes==0,"wrong-context write");
 }
 
-// Optional explicit integration mode. Only this mode briefly activates a small
-// test-owned window; normal range tests above never change Windows foreground.
+// Optional explicit integration mode. Normal range tests above never change
+// Windows foreground. Interactive mode shows an inactive owned window and
+// waits for the user to click it; it never tries to force foreground focus.
 // The Python driver uses production tsf_bridge.Client against the real DLL.
 static constexpr UINT kIpcReport = WM_APP + 20;
 static constexpr UINT kIpcStop = WM_APP + 21;
@@ -339,11 +340,12 @@ static LRESULT CALLBACK IpcWindowProc(HWND window,UINT message,WPARAM wp,LPARAM 
         return 1;
     }
     if(message==kIpcExternalChange&&fixture){fixture->store->ExternalReplace(0,6,L"Edited");return 1;}
+    if(message==WM_SETFOCUS&&fixture){fixture->manager->SetFocus(fixture->document.Get());return 0;}
     if(message==kIpcStop||message==WM_CLOSE){PostQuitMessage(0);return 0;}
     if(message==WM_TIMER){PostQuitMessage(124);return 0;}
     return DefWindowProcW(window,message,wp,lp);
 }
-static int IpcHost(const wchar_t* dllPath){
+static int IpcHost(const wchar_t* dllPath,bool interactive=false){
     struct Module {HMODULE handle;~Module(){if(handle)FreeLibrary(handle);}} module{LoadLibraryExW(dllPath,nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32)};
     Require(module.handle!=nullptr,"load production TSF DLL");
     using GetClass=HRESULT(STDAPICALLTYPE*)(REFCLSID,REFIID,void**);
@@ -357,22 +359,32 @@ static int IpcHost(const wchar_t* dllPath){
     Check(service.value->ActivateEx(fixture.manager.Get(),fixture.client,0),"Activate production service");
 
     const HWND previous=GetForegroundWindow();
-    struct OwnedWindow {HWND previous=nullptr;HWND window=nullptr;~OwnedWindow(){
+    struct OwnedWindow {HWND previous=nullptr;HWND window=nullptr;bool restore=true;~OwnedWindow(){
         const bool wasForeground=window&&GetForegroundWindow()==window;
         if(window&&IsWindow(window))DestroyWindow(window);
-        if(wasForeground&&previous&&IsWindow(previous))SetForegroundWindow(previous);
-    }} owned{previous,nullptr};
+        if(restore&&wasForeground&&previous&&IsWindow(previous))SetForegroundWindow(previous);
+    }} owned{previous,nullptr,!interactive};
     WNDCLASSW wc{};wc.lpfnWndProc=IpcWindowProc;wc.lpszClassName=L"STOOM.Test.RealTsfHost";wc.hInstance=GetModuleHandleW(nullptr);
+    wc.hIcon=LoadIconW(module.handle,MAKEINTRESOURCEW(1));
     Require(RegisterClassW(&wc)!=0,"register owned host window");
-    owned.window=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"STOOM TSF integration test (temporary)",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,40,40,460,90,nullptr,nullptr,wc.hInstance,&fixture);
+    owned.window=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"STOOM native TSF self-test",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,40,40,460,90,nullptr,nullptr,wc.hInstance,&fixture);
     Require(owned.window!=nullptr,"create owned host window");
-    ShowWindow(owned.window,SW_SHOWNORMAL);SetForegroundWindow(owned.window);::SetFocus(owned.window);
+    if(interactive){
+        ShowWindow(owned.window,SW_SHOWNOACTIVATE);
+        std::cout<<"{\"waiting_for_click\":true,\"window\":"<<reinterpret_cast<uintptr_t>(owned.window)<<",\"pid\":"<<GetCurrentProcessId()<<",\"title\":\"STOOM native TSF self-test\",\"timeout_seconds\":45}"<<std::endl;
+    }else{
+        ShowWindow(owned.window,SW_SHOWNORMAL);SetForegroundWindow(owned.window);::SetFocus(owned.window);
+    }
     Check(fixture.manager->SetFocus(fixture.document.Get()),"focus own document");
     // Foreground changes may be queued. Give only our STA's window messages a
     // short opportunity to settle; do not attach input queues or synthesize keys.
-    const auto focusDeadline=GetTickCount64()+300;
-    while(GetForegroundWindow()!=owned.window&&GetTickCount64()<focusDeadline){
-        MSG queued{};while(PeekMessageW(&queued,nullptr,0,0,PM_REMOVE)){TranslateMessage(&queued);DispatchMessageW(&queued);}
+    const auto focusDeadline=GetTickCount64()+(interactive?45000:300);
+    auto ownsKeyboard=[&](){GUITHREADINFO info{sizeof(info)};return GetForegroundWindow()==owned.window&&GetGUIThreadInfo(GetCurrentThreadId(),&info)&&info.hwndFocus==owned.window;};
+    while(!ownsKeyboard()&&GetTickCount64()<focusDeadline){
+        MSG queued{};while(PeekMessageW(&queued,nullptr,0,0,PM_REMOVE)){
+            if(queued.message==WM_QUIT){std::cout<<"{\"skip\":true,\"reason\":\"Owned test window was closed before activation\"}"<<std::endl;return 77;}
+            TranslateMessage(&queued);DispatchMessageW(&queued);
+        }
         Sleep(10);
     }
     GUITHREADINFO gui{sizeof(gui)};
@@ -393,7 +405,7 @@ int wmain(int argc,wchar_t** argv){
     const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);if(FAILED(com))return 2;
     int result=0;
     try{
-        if(argc==3&&wcscmp(argv[1],L"--ipc")==0){result=IpcHost(argv[2]);CoUninitialize();return result;}
+        if(argc==3&&(wcscmp(argv[1],L"--ipc")==0||wcscmp(argv[1],L"--ipc-interactive")==0)){result=IpcHost(argv[2],wcscmp(argv[1],L"--ipc-interactive")==0);CoUninitialize();return result;}
         const std::pair<const char*,std::function<void()>> tests[]={
             {"selected text / single SetText / caret",SelectionTest},
             {"current paragraph / preserve neighbours",ParagraphTest},

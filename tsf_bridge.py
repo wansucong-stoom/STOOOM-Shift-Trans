@@ -139,14 +139,123 @@ class Client:
     def apply(self,focus,snapshot,text):return self.exchange(snapshot.server,focus,2,snapshot.token,text)[1]
 
 def activate_installed():
-    """Run only the registered component's helper, as this user, off the UI thread."""
+    """Activate as the current user and retain the helper's diagnostic evidence.
+
+    This runs off the UI thread. A successful profile activation request does not
+    prove that the focused editor loaded the service or exposes a text context.
+    """
+    import json
+    import re
     import winreg
+
+    def system_error(error):
+        code=getattr(error,'winerror',None)
+        if code is None:code=getattr(error,'errno',None)
+        return f' (Windows 오류 {code})' if code is not None else ''
+
+    registry_path='SOFTWARE\\Classes\\CLSID\\'+SERVICE_ID+r'\InprocServer32'
     try:
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,'SOFTWARE\\Classes\\CLSID\\'+SERVICE_ID+r'\InprocServer32',0,winreg.KEY_READ|winreg.KEY_WOW64_64KEY) as key:
-            dll=Path(winreg.QueryValueEx(key,None)[0])
+        key=winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,registry_path,0,winreg.KEY_READ|winreg.KEY_WOW64_64KEY)
+    except FileNotFoundError:
+        return 'TSF 구성요소가 등록되지 않았습니다. 설치 프로그램에서 TSF 입력 지원을 설치하세요.'
+    except OSError as error:
+        return 'TSF 등록 정보 읽기 실패'+system_error(error)+'. 설치 상태를 확인하지 못했습니다.'
+    try:
+        with key:
+            registered_path,value_type=winreg.QueryValueEx(key,None)
+        if not isinstance(registered_path,str) or not registered_path.strip():
+            return 'TSF 등록 정보 형식 오류: 구성요소 경로가 비어 있거나 올바르지 않습니다.'
+        if value_type==getattr(winreg,'REG_EXPAND_SZ',2):registered_path=os.path.expandvars(registered_path)
+        dll=Path(registered_path)
+        if not dll.is_absolute():
+            return 'TSF 등록 정보 형식 오류: 구성요소 경로가 절대 경로가 아닙니다.'
         host=dll.with_name('STOOMTextServiceHost.exe')
-        if not host.is_file():return 'TSF 구성요소 없음 · 기본 입력 호환 경로 사용'
+        if not host.is_file():
+            return 'TSF 등록은 있지만 실행 도우미 파일이 없습니다. TSF 입력 지원을 다시 설치하세요.'
+    except (ValueError,TypeError):
+        return 'TSF 등록 정보 형식 오류: 구성요소 경로를 확인할 수 없습니다.'
+    except OSError as error:
+        return 'TSF 등록 정보 또는 실행 파일 확인 실패'+system_error(error)+'. 등록된 구성요소를 확인하지 못했습니다.'
+
+    try:
         result=subprocess.run([str(host),'--activate'],capture_output=True,timeout=10,creationflags=subprocess.CREATE_NO_WINDOW)
-        if result.returncode:return 'TSF 활성화 실패 · 기본 입력 호환 경로 사용'
-        return 'TSF 활성화 요청 완료 · 입력창 연결은 단축키를 누를 때 확인합니다.'
-    except (OSError,subprocess.TimeoutExpired):return 'TSF 구성요소 없음 · 기본 입력 호환 경로 사용'
+    except subprocess.TimeoutExpired:
+        return 'TSF 활성화 응답 시간 초과 (10초). 구성요소는 등록되어 있지만 활성화 결과를 확인하지 못했습니다.'
+    except OSError as error:
+        return 'TSF 실행 도우미 시작 실패'+system_error(error)+'. TSF 활성화 요청을 실행하지 못했습니다.'
+
+    exit_detail=f'종료 코드 {result.returncode}'
+    try:
+        raw=result.stdout
+        if not isinstance(raw,(bytes,str)) or len(raw)>65536:raise ValueError('invalid output size')
+        data=json.loads(raw.decode('utf-8-sig') if isinstance(raw,bytes) else raw)
+        if not isinstance(data,dict):raise ValueError('not a status object')
+    except (ValueError,UnicodeError,TypeError):
+        return f'TSF 활성화 상태 응답을 해석하지 못했습니다 ({exit_detail}). 활성화 성공 여부를 확인할 수 없습니다.'
+
+    def hresult(value):
+        if isinstance(value,str) and re.fullmatch(r'0[xX][0-9a-fA-F]{8}',value):return int(value,16)
+        if isinstance(value,int) and not isinstance(value,bool) and -(2**31)<=value<2**32:return value&0xffffffff
+        return None
+
+    details=[]
+    step=data.get('step')
+    if isinstance(step,str) and step:
+        # The helper emits API identifiers, not document content. Bound and
+        # sanitize unexpected strings before placing them in the settings UI.
+        details.append(re.sub(r'[^A-Za-z0-9_.:-]','?',step[:64]))
+    top_hr=hresult(data.get('hresult'))
+    if top_hr is not None:details.append(f'0x{top_hr:08X}')
+    if data.get('registered') is False:details.append('프로필 등록 확인 실패')
+    error_code=data.get('error')
+    error_labels={
+        'registration_incomplete':'입력 서비스 등록이 완전하지 않습니다',
+        'keyboard_state_unavailable':'현재 키보드 프로필을 확인하지 못했습니다',
+        'current_language_not_supported':'현재 입력 언어의 TSF 프로필이 없습니다',
+        'profile_activation_failed':'언어 프로필 활성화 실패',
+        'self_service_not_loaded':'TSF 도우미에 입력 서비스가 로드되지 않았습니다',
+        'keyboard_profile_changed':'기존 키보드 프로필 유지 확인 실패'}
+    if isinstance(error_code,str) and error_code:
+        safe_code=re.sub(r'[^A-Za-z0-9_.:-]','?',error_code[:64])
+        details.append(error_labels.get(error_code,'TSF 구성요소 오류')+f' ({safe_code})')
+    self_hr=hresult(data.get('self_probe_hresult'))
+    if self_hr is not None and self_hr!=0:details.append(f'서비스 자체 확인 0x{self_hr:08X}')
+    if data.get('operation')=='activate' and data.get('registered') is True:
+        if 'self_service_loaded' not in data or 'keyboard_unchanged' not in data:
+            details.append('이전 TSF 구성요소에는 서비스 로딩·키보드 유지 확인 결과가 없습니다. TSF 입력 지원을 업데이트하세요')
+        else:
+            if data.get('self_service_loaded') is not True and error_code!='self_service_not_loaded':details.append('입력 서비스 자체 로딩을 확인하지 못했습니다')
+            if data.get('keyboard_unchanged') is not True and error_code!='keyboard_profile_changed':details.append('기존 키보드 프로필 유지 여부를 확인하지 못했습니다')
+    category=data.get('category_checks')
+    category_valid=False
+    if isinstance(category,dict):
+        category_hr=hresult(category.get('hresult'))
+        category_valid=(category_hr==0 and category.get('type_registered') is True and category.get('service_member') is True and category.get('keyboard_member') is False)
+        if category_hr is not None and category_hr!=0:details.append(f'입력 서비스 분류 확인 0x{category_hr:08X}')
+        if category.get('type_registered') is not True or category.get('service_member') is not True or category.get('keyboard_member') is not False:
+            details.append('보조 입력 서비스 등록 관계가 일치하지 않습니다')
+    profiles=data.get('profiles')
+    codes=[]
+    language_ids=[]
+    languages={0x0412:'한국어',0x0409:'영어',0x0411:'일본어'}
+    if isinstance(profiles,list):
+        for profile in profiles[:8]:
+            if not isinstance(profile,dict):codes.append(None);language_ids.append(None);continue
+            language=profile.get('language')
+            language_ids.append(language if isinstance(language,int) and not isinstance(language,bool) else None)
+            label=languages.get(language) if isinstance(language,int) and not isinstance(language,bool) else None
+            if label is None:label=f'언어 0x{language:04X}' if isinstance(language,int) and not isinstance(language,bool) and 0<=language<=0xffff else '알 수 없는 언어'
+            code=hresult(profile.get('hresult'));codes.append(code)
+            details.append(f'{label} '+(f'0x{code:08X}' if code is not None else '결과 코드 없음'))
+    confirmed=(result.returncode==0 and data.get('ok') is True and data.get('operation')=='activate'
+               and data.get('registered') is True and isinstance(profiles,list)
+               and data.get('self_service_loaded') is True and data.get('keyboard_unchanged') is True and self_hr==0
+               and category_valid
+               and len(profiles)==3 and len(codes)==3 and all(code==0 for code in codes)
+               and set(language_ids)==set(languages))
+    if confirmed:
+        return 'TSF 활성화 요청 완료 (한국어·영어·일본어). 입력창의 실제 연결은 단축키를 누를 때 확인합니다.'
+    if not details:details.append('구성요소가 상세 상태를 반환하지 않았습니다')
+    details.append(exit_detail)
+    label='TSF 활성화 실패' if result.returncode!=0 or data.get('ok') is False or any(code not in (None,0) for code in codes) else 'TSF 활성화 결과 확인 실패'
+    return label+' · '+' / '.join(details)

@@ -42,6 +42,9 @@ class Tray:
     def show(self):
         pass
 
+    def setToolTip(self, text):
+        pass
+
     def hide(self):
         pass
 
@@ -81,6 +84,7 @@ with tempfile.TemporaryDirectory() as directory:
     main.MODELS.mkdir()
     main.Tap = Tap
     main.QSystemTrayIcon = Tray
+    main.tsf_bridge.activate_installed = lambda: 'test: TSF activation skipped'
     main.App.begin_engine_preflight = fake_preflight
     main.install_pack = forbidden_download
     qt = QApplication.instance() or QApplication([])
@@ -88,7 +92,7 @@ with tempfile.TemporaryDirectory() as directory:
 
     with mock.patch.object(main.urllib.request, 'urlopen', side_effect=forbidden_download):
         # A pre-model-selection settings file retains existing language and
-        # shortcut preferences, and defaults each model direction to legacy.
+        # shortcut preferences, and now defaults Korean/English to OPUS Big.
         settings_path.write_text(json.dumps({
             'shift': '영어', 'ctrl': '일본어', 'source': '한국어',
             'engine': '기본 오프라인 엔진', 'external_path': '',
@@ -96,19 +100,20 @@ with tempfile.TemporaryDirectory() as directory:
         first = main.App()
         qt.processEvents()
         assert not first.isVisible(), 'settings check must stay offscreen'
-        assert first.model_choices['ko_en'].currentData() == 'ko_en'
-        assert first.model_choices['en_ko'].currentData() == 'en_ko'
+        assert first.model_choices['ko_en'].currentData() == 'ko_en_opus_big'
+        assert first.model_choices['en_ko'].currentData() == 'en_ko_opus_big'
         assert first.target['ctrl'].currentText() == '일본어'
         assert first.source.currentText() == '한국어'
-        assert main.VARIANTS == {'ko_en': 'ko_en', 'en_ko': 'en_ko'}
+        assert main.VARIANTS == {'ko_en': 'ko_en_opus_big', 'en_ko': 'en_ko_opus_big'}
         for pair in ('ko_en', 'en_ko'):
             box = first.model_choices[pair]
             assert {box.itemData(i) for i in range(box.count())} == {pair, pair + '_opus_big'}
 
-        # Only Korean -> English changes.  User-visible labels may include
+        # An explicit English -> Korean Argos choice remains available.
+        # User-visible labels may include
         # installation status, so stable model IDs drive selection and save.
-        ko_en = first.model_choices['ko_en']
-        ko_en.setCurrentIndex(ko_en.findData('ko_en_opus_big'))
+        en_ko = first.model_choices['en_ko']
+        en_ko.setCurrentIndex(en_ko.findData('en_ko'))
         qt.processEvents()
         saved = json.loads(settings_path.read_text(encoding='utf-8'))
         assert saved['models'] == {'ko_en': 'ko_en_opus_big', 'en_ko': 'en_ko'}

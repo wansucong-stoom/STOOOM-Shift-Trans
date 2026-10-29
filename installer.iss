@@ -1,7 +1,7 @@
 #define AppName "STOOM Shift Translator"
 #define AppExe "STOOMShiftTranslator.exe"
 #ifndef AppVersion
-#define AppVersion "0.6.0"
+#define AppVersion "0.6.1"
 #endif
 #ifndef BuildRoot
 #define BuildRoot "dist"
@@ -26,7 +26,7 @@ RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=dist
-OutputBaseFilename=STOOM-Translator-v06-TSF-setup
+OutputBaseFilename=STOOM-Translator-v061-TSF-setup
 SetupIconFile=stoom.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2/fast
@@ -48,6 +48,10 @@ Name: "desktopicon"; Description: "바탕 화면에 바로가기 만들기"; Fla
 Name: "tsf"; Description: "Windows TSF 입력 지원 설치·업데이트 (관리자 승인 필요)"
 #endif
 
+[Run]
+Filename: "{app}\{#AppExe}"; Parameters: "--after-update"; Description: "STOOM Shift Translator 실행"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: not IsAppUpdate
+Filename: "{app}\{#AppExe}"; Parameters: "--after-update"; Flags: nowait runasoriginaluser; Check: IsAppUpdate
+
 [Code]
 const
   AppMutexName = 'Local\STOOMShiftTranslator05.SingleInstance';
@@ -59,6 +63,11 @@ var
 #ifdef TsfSetup
   TsfInstalled: Boolean;
 #endif
+
+function IsAppUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:STOOMUPDATE|0}') = '1';
+end;
 
 function OpenEvent(DesiredAccess: LongWord; InheritHandle: Boolean;
   Name: String): THandle;
@@ -113,14 +122,10 @@ var
 #endif
 begin
   Result := '';
-  if not StopTranslator then
-  begin
-    Result := 'STOOM 번역기가 실행 중입니다. 다운로드 또는 번역이 끝나면 ' +
-      '작업 표시줄 트레이의 STOOM 아이콘에서 종료한 뒤 다시 시도하세요.' + #13#10 +
-      '기존 버전을 삭제할 필요는 없습니다. 받은 언어팩과 설정은 그대로 유지됩니다.';
-    Exit;
-  end;
 #ifdef TsfSetup
+  { Resolve the optional elevated prerequisite before stopping the old app.
+    Declining UAC or failing TSF setup must leave the translator available.
+    Native TSF DLLs use versioned directories, so loaded editors stay intact. }
   if WizardIsTaskSelected('tsf') and not TsfInstalled then
   begin
     ExtractTemporaryFile('STOOMTextService-setup.exe');
@@ -142,6 +147,13 @@ begin
     if ExitCode = 3010 then NeedsRestart := True;
   end;
 #endif
+  if not StopTranslator then
+  begin
+    Result := 'STOOM 번역기가 실행 중입니다. 다운로드 또는 번역이 끝나면 ' +
+      '작업 표시줄 트레이의 STOOM 아이콘에서 종료한 뒤 다시 시도하세요.' + #13#10 +
+      '기존 버전을 삭제할 필요는 없습니다. 받은 언어팩과 설정은 그대로 유지됩니다.';
+    Exit;
+  end;
 end;
 
 procedure DeinitializeSetup;

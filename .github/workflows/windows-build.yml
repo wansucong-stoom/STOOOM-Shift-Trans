@@ -1,6 +1,13 @@
 name: Windows build
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '검증한 버전의 정식 GitHub Release를 게시합니다'
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
 permissions:
   contents: read
 jobs:
@@ -22,18 +29,57 @@ jobs:
           cd /d "%GITHUB_WORKSPACE%"
           call native_tsf\tests\run_host.cmd x86 || exit /b 1
       - run: python tests/run_tests.py
-      - run: python -m PyInstaller --noconfirm --onedir --windowed --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
+      - run: python -m PyInstaller --noconfirm --onedir --windowed --version-file version_info.txt --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
       - name: Build update installers
         shell: pwsh
         run: |
           $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
           if (!(Test-Path $compiler)) { throw 'Inno Setup 6 is required on this build image.' }
-          $nativeVersion = "0.6.0-ci.$env:GITHUB_RUN_NUMBER"
+          $nativeVersion = "0.6.1-ci.$env:GITHUB_RUN_NUMBER"
           & $compiler "/DNativeBuildRoot=$PWD\native_tsf\build" "/DComponentVersion=$nativeVersion" native_tsf\installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & $compiler "/DTsfSetup=$PWD\native_tsf\dist\STOOM-TextService-$nativeVersion-setup.exe" installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: STOOMShiftTranslator-v06-TSF-experimental
-          path: dist/STOOM-Translator-v06-TSF-setup.exe
+          name: STOOMShiftTranslator-v061-TSF-experimental
+          path: dist/STOOM-Translator-v061-TSF-setup.exe
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: stoom-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: STOOMShiftTranslator-v061-TSF-experimental
+          path: release-files
+      - name: Publish verified installer as a GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(python -c 'import release_updates; print(release_updates.VERSION)')
+          tag="v$version"
+          if [[ "$RELEASE_REF" == refs/tags/* && "$RELEASE_REF" != "refs/tags/$tag" ]]; then
+            echo 'Tag must match the application version.' >&2
+            exit 1
+          fi
+          installer="release-files/STOOM-Translator-v${version//./}-TSF-setup.exe"
+          test -s "$installer"
+          # Never replace an already published release or its installer.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo 'Release already exists; leaving its assets unchanged.'
+            exit 0
+          fi
+          sha256sum "$installer" > release-files/SHA256SUMS.txt
+          gh release create "$tag" "$installer" release-files/SHA256SUMS.txt --draft --target "$RELEASE_COMMIT" --title "STOOM Shift Translator $version" --generate-notes
+          gh release edit "$tag" --draft=false --latest
