@@ -29,7 +29,7 @@ jobs:
           cd /d "%GITHUB_WORKSPACE%"
           call native_tsf\tests\run_host.cmd x86 || exit /b 1
       - run: python tests/run_tests.py
-      - run: python -m PyInstaller --noconfirm --onedir --windowed --version-file version_info.txt --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
+      - run: python -m PyInstaller --clean --noconfirm --onedir --windowed --version-file version_info.txt --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
       - name: Build update installers
         shell: pwsh
         run: |

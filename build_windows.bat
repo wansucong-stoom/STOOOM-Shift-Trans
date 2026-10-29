@@ -16,7 +16,7 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 .venv\Scripts\python.exe tests\run_tests.py
 if errorlevel 1 exit /b 1
-.venv\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --version-file version_info.txt --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
+.venv\Scripts\python.exe -m PyInstaller --clean --noconfirm --onedir --windowed --version-file version_info.txt --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
 if errorlevel 1 exit /b 1
 where ISCC.exe >nul 2>nul
 if errorlevel 1 (
