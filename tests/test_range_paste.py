@@ -87,3 +87,22 @@ app.paste_range(7,(1,2),snap,'translated',20,'focus')
 while pending:pending.pop(0)()
 assert state['keys']==['a','c','a','v'] and not app.errors and not app.busy
 print('temporary provider lag is retried safely: PASS')
+
+# After Ctrl+C was verified, a temporarily stale UIA read must not reread
+# the replacement clipboard as though it were the copied original.
+state.update(selected=0,keys=[],valid=True,source='original',source_checks=0,late_change=False);app.errors=[];app.busy=True
+def delayed_after_copy(snapshot,rid,text_pattern):
+ state['source_checks']+=1
+ return state['source_checks'] != 2
+main.range_access.after_selection_source_matches=delayed_after_copy
+confirmations=[]
+def confirm_once(lease,old,new):
+ confirmations.append(old)
+ assert len(confirmations)==1
+ return 'matched'
+Lease.confirm_selection_and_put=confirm_once
+app.paste_range(7,(1,2),snap,'translated',20,'focus')
+while pending:pending.pop(0)()
+assert state['keys']==['a','c','a','v'] and confirmations==['original'] and not app.errors
+print('verified clipboard survives a delayed provider retry: PASS')
+
