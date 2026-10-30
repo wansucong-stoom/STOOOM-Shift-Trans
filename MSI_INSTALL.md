@@ -3,8 +3,8 @@
 MSI는 현재 Windows 계정에 설치합니다. 별도의 Python 설치는 필요하지 않습니다. 앞으로 새 릴리즈의 설치 파일은 MSI로 통일하며 과거에 게시한 EXE 파일은 보존합니다.
 
 1. 실행 중인 번역기가 있으면 트레이 메뉴에서 종료합니다.
-2. `STOOM-Translator-v0612-TSF-setup.msi`를 실행합니다.
-3. 설치 후 시작 메뉴의 **STOOM Shift Translator MSI**를 실행합니다.
+2. `STOOM-Translator-v0613-TSF-setup.msi`를 실행합니다.
+3. 설치 후 시작 메뉴의 **STOOM Shift Translator**를 실행합니다.
 
 기존 EXE 설치와 MSI 설치는 서로 다른 설치 관리 체계를 사용합니다. MSI는 기존 EXE 버전을 자동 제거하거나 같은 파일의 소유권을 넘겨받지 않고 `%LOCALAPPDATA%\Programs\STOOM Shift Translator MSI`에 설치합니다. 기존 EXE 버전이 남아 있다면 사용하려는 버전을 구분해 실행하세요. 동시에 실행되면 앱의 중복 실행 방지 기능에 따라 이미 실행된 버전이 사용됩니다.
 
@@ -26,7 +26,7 @@ MSI는 현재 Windows 계정에 설치합니다. 별도의 Python 설치는 필�
 
 ```powershell
 python build_msi.py
-python verify_msi.py dist/STOOM-Translator-v0612-TSF-setup.msi work/msi-verify
+python verify_msi.py dist/STOOM-Translator-v0613-TSF-setup.msi work/msi-verify
 ```
 
 검증 명령은 새로운 폴더로 CAB 파일을 추출하고 빌드 매니페스트와 바이트를 비교합니다. MSI 설치 작업은 실행하지 않습니다. 이미 존재하는 MSI나 검증 폴더를 덮어쓰지 않습니다.
