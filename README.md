@@ -13,12 +13,12 @@ Windows 입력창에서 선택한 글을 오프라인으로 번역해 교체합�
 ## 설치와 업데이트
 
 - Windows 10/11 x64용입니다. 사용 PC에 Python이나 빌드 도구를 따로 설치하지 않습니다.
-- 기존 EXE 설치의 업데이트는 [v0.6.11 설치 파일](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.11/STOOM-Translator-v0611-TSF-setup.exe)을 실행합니다.
-- 기존 설치 위에 업데이트할 수 있으며 받은 언어팩과 설정을 유지합니다.
-- 모델은 설치 EXE에 포함하지 않습니다. 최초 다운로드에는 인터넷이 필요하고, 설치 후 기본 번역은 오프라인으로 실행됩니다.
-- 선택적인 Windows 입력 지원(TSF) 설치에는 관리자 승인이 필요할 수 있습니다. 기본 키보드 경로는 TSF 문서 기능을 필수로 요구하지 않습니다.
+- [v0.6.11 MSI 설치 파일](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.11/STOOM-Translator-v0611-TSF-setup.msi)을 실행합니다. **앞으로 새 릴리즈는 MSI로 배포하며, 과거 릴리즈의 EXE 파일은 보존합니다.**
+- MSI 버전 간 업데이트는 같은 설치 제품군을 사용하며 받은 언어팩과 설정을 유지합니다.
+- 모델은 설치 파일에 포함하지 않습니다. 최초 다운로드에는 인터넷이 필요하고, 설치 후 기본 번역은 오프라인으로 실행됩니다.
+- 기본 키보드 경로는 TSF 문서 기능을 필수로 요구하지 않습니다. 기존에 등록한 TSF 구성요소는 유지하지만 MSI가 새로 등록하지는 않습니다.
 
-**MSI 설치:** [MSI 다운로드](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.11/STOOM-Translator-v0611-TSF-setup.msi). 기존 번역기를 트레이에서 종료한 뒤 설치하고 시작 메뉴의 MSI 버전을 실행하세요. MSI는 기존 EXE 설치와 별도 경로를 사용하고, 받은 모델·설정은 공유합니다. 기존 EXE 설치를 자동 제거하거나 MSI로 전환하지 않습니다. MSI끼리의 업데이트는 같은 MSI 제품군을 사용합니다. MSI에는 별도 TSF 등록 설치를 포함하지 않으며 기존 TSF 등록과 기본 키보드 경로를 사용할 수 있습니다.
+**기존 EXE에서 처음 전환할 때:** 기존 번역기를 트레이에서 종료한 뒤 MSI를 직접 설치하고 시작 메뉴의 **STOOM Shift Translator MSI**를 실행하세요. MSI는 기존 EXE 설치와 별도 경로를 사용하며 받은 모델·설정은 공유합니다. 기존 EXE 설치를 자동 제거하거나 MSI로 전환하지 않습니다. 구형 EXE의 자동 업데이트만으로 MSI로 바뀌지는 않습니다. 자세한 절차와 검증 범위는 [MSI 안내](MSI_INSTALL.md)에 정리했습니다.
 
 현재 배포 파일은 코드 서명되지 않았습니다. **MSI 확장자만으로 SmartScreen·백신·게시자 경고가 없어지지는 않습니다.** 보안 설정을 변경하지 않습니다.
 
@@ -59,6 +59,7 @@ OPUS 원본은 University of Helsinki의 [한국어→영어](https://huggingfac
 
 - 사용자가 Pwh와 여러 한글 문단의 실제 교체 성공을 확인했습니다. 모든 프로그램·입력창의 성공을 뜻하지는 않습니다.
 - 한글 표 마지막 문장·대괄호 제목 등에서 선택 실패와 표 속성 창 열림이 보고됐습니다. 0.6.11은 자동 마우스 선택을 제거했으며 해당 위치의 새 버전 최종 성공은 추가 확인 대상입니다.
+- 0.6.11에서도 한글 자동 선택이 끝 줄바꿈을 제외하지 못하는 실패를 확인했습니다. 직접 드래그는 성공한 기록이 있으며, 자동 선택은 해결 완료로 간주하지 않습니다. 사용자 시험 방법은 [문단 선택 진단 안내](diagnostics/README.md)에 정리했습니다.
 - 마지막 줄바꿈 뒤 빈 문단에서는 직전 문단을 선택할 수 있습니다. 이 위치에서는 글을 직접 선택하세요.
 - 문단·글자별 혼합 서식과 실행 취소는 편집기별 추가 검증 대상입니다.
 - 같은 창 안의 다른 위치에 동일 문구가 있으면 클립보드만으로 원래 범위를 구분할 수 없습니다.
@@ -82,9 +83,10 @@ OPUS 원본은 University of Helsinki의 [한국어→영어](https://huggingfac
 **업데이트** 화면이나 트레이에서 이 저장소의 새 정식 GitHub Release를 확인합니다.
 
 - 기본값: 자동 확인 켜짐 / 자동 설치 꺼짐.
-- 직접 업데이트를 누르거나 자동 설치를 켜면 공식 설치 파일을 다운로드합니다.
+- MSI로 설치한 앱에서 직접 업데이트를 누르거나 자동 설치를 켜면 같은 MSI 형식의 공식 설치 파일을 다운로드합니다.
 - GitHub의 SHA-256·크기를 확인한 뒤 설치하며 번역·언어팩 설치·입력 교체가 끝날 때까지 기다립니다.
 - 초안·prerelease·현재보다 낮은 버전은 자동 설치 대상이 아닙니다. 모델과 설정은 유지합니다.
+- 기존 EXE 버전은 MSI로 한 번 직접 전환해야 합니다. 이후 새 릴리즈에 EXE 설치 파일을 추가하지 않습니다.
 
 ## 사용자 번역 엔진
 
@@ -114,19 +116,22 @@ OPUS 원본은 University of Helsinki의 [한국어→영어](https://huggingfac
 
 ## 개발과 빌드
 
-개발 PC에는 Python 3.11, Visual Studio C++ Build Tools/Windows SDK, Inno Setup 6이 필요합니다.
+기본 MSI 빌드에는 Windows와 Python 3.11이 필요합니다. Python 3.11의 `msilib`로 MSI를 만들므로 Inno Setup이나 Visual Studio C++ Build Tools는 기본 빌드의 필수 도구가 아닙니다.
 
 ```bat
 build_windows.bat
 ```
 
-x64/x86 네이티브 빌드·시험, Python 회귀 시험, PyInstaller 패키징 후 다음 파일을 만듭니다.
+Python 회귀 시험, PyInstaller 패키징, MSI 생성과 내장 CAB 파일 검증 후 다음 파일을 만듭니다.
 
 ```text
-dist/STOOM-Translator-v0611-TSF-setup.exe
+dist/STOOM-Translator-v0611-TSF-setup.msi
+dist/SHA256SUMS.txt
 ```
 
-네이티브 코드·아이콘을 바꿔 배포하면 `STOOM_NATIVE_VERSION`도 새 값으로 올립니다. 로드된 DLL을 같은 경로에 덮어쓰지 않도록 버전별 폴더를 사용합니다. 현재 배포 파일은 별도로 코드 서명하지 않았습니다.
+선택적인 네이티브 TSF 개발 시험은 Visual Studio C++ Build Tools/Windows SDK가 있는 환경에서 `build_windows.bat --with-native-tests`로 함께 실행할 수 있습니다. 기존 Inno/TSF 설치 소스는 유지하지만 기본 빌드와 GitHub 릴리즈 작업은 새 EXE 설치 파일을 생성·게시하지 않습니다. 현재 배포 파일은 별도로 코드 서명하지 않았습니다.
+
+GitHub Actions도 MSI를 생성하고 CAB 내 모든 파일을 검사한 뒤 MSI와 체크섬만 게시합니다. 이미 존재하는 릴리즈와 그 자산은 덮어쓰지 않습니다.
 
 브랜드 자산은 PySide6·NumPy가 있는 개발 환경에서 별도 출력 폴더로 재생성합니다.
 
@@ -151,6 +156,7 @@ python branding/build_product_identity.py NEW_OUTPUT_DIRECTORY
 | `clipboard_process.py` / `clipboard_worker.py` / `clipboard_native.py` | 격리된 클립보드 작업 |
 | `model_packs.py` | 언어팩 목록·검증·설치 |
 | `release_updates.py` / `update_control.py` | 릴리즈 확인·검증·업데이트 |
+| `build_msi.py` / `verify_msi.py` | 기본 MSI 생성·내장 파일 검증 |
 | `branding/` | 공통 자산·규격·글꼴 출처 |
 | `native_tsf/` | 선택적 Windows TSF 구성요소 |
 | `tests/` | 회귀 시험 |

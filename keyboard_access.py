@@ -280,9 +280,9 @@ class Driver:
                         self.guard(revision);self.env.chord(SHIFT,RIGHT);self.pause(.025,revision)
                         if self.copy(lease,revision)!=text:
                             self.record('paragraph_restore_failed')
-                            raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                            raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
                     if not (automatic and strategy=='backward'):
-                        raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                        raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
                     self.record('paragraph_end_reselect_started')
                     # Collapse to the copied end, step over exactly one
                     # boundary (CRLF is one caret step), and select backward.
@@ -293,7 +293,7 @@ class Driver:
                     shrunk=self.copy(lease,revision)
                     if shrunk!=without_break:
                         self.record('paragraph_end_reselect_failed',source_chars=len(shrunk) if shrunk is not None else 0)
-                        raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                        raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
                 self.record('paragraph_trim_confirmed',source_chars=len(shrunk))
                 text=shrunk
             if len(text.encode('utf-16-le'))//2>MAX_SOURCE or '\0' in text or '\ufffc' in text:
