@@ -101,14 +101,20 @@ assert s.text=='번역 문단' and e.text=='앞 문단\n번역 문단\n뒤 문�
 d.apply(s,'Translated paragraph')
 assert e.text=='앞 문단\nTranslated paragraph\n뒤 문단' and e.pasted==1
 
-for change in ('focus','typing','position','source'):
+for change in ('focus','typing','source'):
     e=Env('original',(0,8));d=k.Driver(e,e.factory);s=d.capture(7)
     if change=='focus':e.focused=False
     elif change=='typing':e.revision+=1
-    elif change=='position':e.caret=2
     else:e.text='modified'
     raises(k.Cancelled,lambda:d.apply(s,'new'))
     assert e.pasted==0 and all(x.restored for x in e.leases)
+
+# A host's caret geometry/state may change while the same source is selected.
+# Its rectangle alone must not block an exact source-verified replacement.
+e=Env('original',(0,8));d=k.Driver(e,e.factory);s=d.capture(7)
+e.caret=2
+d.apply(s,'new')
+assert e.text=='new' and e.pasted==1
 
 # If the space cannot be proved, Backspace is never sent to the source.
 e=Env('원문');e.fail_space=True;d=k.Driver(e,e.factory)

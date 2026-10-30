@@ -34,5 +34,5 @@ if not defined STOOM_NATIVE_VERSION set "STOOM_NATIVE_VERSION=0.6.3-20261029.4"
 if errorlevel 1 exit /b 1
 "%ISCC%" "/DTsfSetup=%~dp0native_tsf\dist\STOOM-TextService-%STOOM_NATIVE_VERSION%-setup.exe" installer.iss
 if errorlevel 1 exit /b 1
-echo Build complete: dist\STOOM-Translator-v068-TSF-setup.exe
+echo Build complete: dist\STOOM-Translator-v069-TSF-setup.exe
 pause

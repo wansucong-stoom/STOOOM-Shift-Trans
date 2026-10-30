@@ -42,7 +42,7 @@ ns={'time':time,'Path':Path,'LANGS':{'한국어':'ko','영어':'en'},
     'QSystemTrayIcon':NS(MessageIcon=NS(Information=1)),
     'threading':NS(Thread=Thread),
     'keyboard_access':NS(Windows=lambda *args:NS(),Driver=Driver),
-    'focus_guard':NS(capture=lambda:focus,unchanged=lambda expected:expected is focus),
+    'focus_guard':NS(capture=lambda:focus,unchanged=lambda expected:expected is focus,same_foreground=lambda expected:expected is focus),
     'ctypes':NS(windll=NS(user32=NS(GetForegroundWindow=lambda:8)))}
 exec(compile(ast.fix_missing_locations(ast.Module(body=nodes,type_ignores=[])),str(source),'exec'),ns)
 
@@ -110,4 +110,22 @@ def no_focus():raise ValueError('텍스트 입력 위치를 확인하지 못했�
 ns['focus_guard'].capture=no_focus
 a.run_translation(('shift',7,time.monotonic()))
 assert a._input_trace.rows[-1]['phase']=='toast.error' and a._input_trace.rows[-1]['job']==1
+
+# Focus cancellation must not be misclassified as the last historical typing
+# activity. Only exact known messages select that category; arbitrary exception
+# text is still replaced by the generic diagnostic error.
+failure=['입력창의 포커스가 바뀌어 번역을 취소했습니다.']
+class FailedDriver(Driver):
+    def capture(self,*args,**kwargs):raise RuntimeError(failure[0])
+    def apply(self,*args,**kwargs):raise RuntimeError(failure[0])
+ns['keyboard_access'].Driver=FailedDriver
+a=app();a.begin_keyboard_capture('shift',7,time.monotonic(),focus)
+assert a._input_trace.rows[-1]['phase']=='capture.failed' and a._input_trace.rows[-1]['cause']=='focus'
+a=app();a.apply_result((8,(),'SOURCE','translation',('keyboard',NS()),focus))
+assert a._input_trace.rows[-1]['phase']=='paste.delivery.failed' and a._input_trace.rows[-1]['cause']=='focus'
+assert a.bridge.keyboard_applied.values==[(False,failure[0])]
+failure[0]='PRIVATE DOCUMENT exception'
+a=app();a.begin_keyboard_capture('shift',7,time.monotonic(),focus)
+assert a._input_trace.rows[-1]['cause']=='typing'
+assert a._input_trace.rows[-1]['error_message']=='번역 작업을 완료하지 못했습니다.'
 print('App diagnostic AST mocks: request/capture/model/paste stages, identity output, silent drop causes, fixed safe errors and ignored jobs: PASS')

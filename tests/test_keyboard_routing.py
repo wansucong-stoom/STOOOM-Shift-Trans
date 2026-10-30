@@ -34,6 +34,7 @@ class App:
 focus=types.SimpleNamespace(foreground=8)
 main.focus_guard.capture=lambda:focus
 main.focus_guard.unchanged=lambda f:f is focus
+main.focus_guard.same_foreground=lambda f:f is focus
 main.ctypes=types.SimpleNamespace(windll=types.SimpleNamespace(user32=types.SimpleNamespace(GetForegroundWindow=lambda:8)))
 def forbidden(*args):raise AssertionError('default route asked for a provider text range')
 main.capture_input=forbidden;main.focused=forbidden

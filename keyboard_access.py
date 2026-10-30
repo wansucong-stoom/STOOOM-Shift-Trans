@@ -59,15 +59,20 @@ class Windows:
         self.owner_pids=[]
         for hwnd in (focus.foreground,focus.keyboard_window):
             pid=W.DWORD();self.u.GetWindowThreadProcessId(hwnd,C.byref(pid));self.owner_pids.append(pid.value)
-    def current(self):return focus_guard.unchanged(self.focus)
+    def current(self):return focus_guard.same_foreground(self.focus)
+    def current_focus(self):
+        try:return focus_guard.capture()
+        except (OSError,ValueError):return None
     def clipboard_sequence(self):return self.u.GetClipboardSequenceNumber()
     def safe(self):
         if self.safety() is False and self.caret_point() is None:
             raise KeyboardError('텍스트 입력 위치를 확인하지 못했습니다.')
     def modifiers(self):return any(self.u.GetAsyncKeyState(v)&0x8000 for v in (SHIFT,CTRL,ALT,0x5b,0x5c))
     def anchor(self):
+        current=self.current_focus()
+        if current is None or current.foreground!=self.focus.foreground:return None
         info=focus_guard.GUITHREADINFO();info.cbSize=C.sizeof(info)
-        if not self.u.GetGUIThreadInfo(self.focus.thread_id,C.byref(info)):return None
+        if not self.u.GetGUIThreadInfo(current.thread_id,C.byref(info)):return None
         r=info.rcCaret
         if not info.hwndCaret or r.bottom<=r.top:return None
         return (int(info.hwndCaret or 0),r.left,r.top,r.right,r.bottom)
@@ -172,7 +177,8 @@ class Driver:
             except Exception:pass  # Diagnostics must never affect an edit.
     def guard(self,revision):
         if not self.env.current():
-            self.record('guard_cancelled',cause='focus',revision=revision)
+            self.record('guard_cancelled',cause='focus',revision=revision,focus=self.env.focus,
+                        current_focus=getattr(self.env,'current_focus',lambda:None)())
             raise Cancelled('입력창의 포커스가 바뀌어 번역을 취소했습니다.')
         current=self.env.activity()[0]
         if current!=revision:
@@ -267,16 +273,12 @@ class Driver:
         if not isinstance(translation,str) or not translation.strip() or '\0' in translation or len(translation.encode('utf-16-le'))//2>16000:
             raise KeyboardError('번역 결과가 비어 있거나 너무 깁니다.')
         if self.env.modifiers():raise Cancelled('새 키보드 입력이 있어 교체를 취소했습니다.')
-        if snapshot.anchor is not None and self.env.anchor()!=snapshot.anchor:
-            raise Cancelled('선택 위치가 바뀌어 교체를 취소했습니다.')
         lease=self.lease_factory()
         try:
             if self.copy(lease,revision)!=snapshot.text:raise Cancelled('선택된 원문이 바뀌어 교체를 취소했습니다.')
             self.record('apply_source_confirmed',source_chars=len(snapshot.text))
             lease.replace_owned(snapshot.text,translation)
             self.guard(revision)
-            if snapshot.anchor is not None and self.env.anchor()!=snapshot.anchor:
-                raise Cancelled('선택 위치가 바뀌어 교체를 취소했습니다.')
             # Ctrl+V is asynchronous. The target may not read the clipboard
             # until much later, so restoring an image after a fixed delay can
             # paste that image instead. Keep the materialized translation.

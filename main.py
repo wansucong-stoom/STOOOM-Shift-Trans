@@ -75,7 +75,10 @@ def _input_record(app,phase,**details):
   trace.record(phase,**details)
  except Exception:pass
 
-def _input_activity_cause(app):
+def _input_activity_cause(app,message=None):
+ if message in ('입력창의 포커스가 바뀌어 번역을 취소했습니다.',
+                '키보드 입력 위치가 바뀌어 취소했습니다.',
+                '키보드 입력 위치가 바뀌어 교체하지 않았습니다.'):return 'focus'
  try:return app.tap.activity_cause()
  except Exception:return 'unknown'
 
@@ -84,8 +87,9 @@ def _input_current_focus():
  except Exception:return None
 
 def keyboard_safety():
- # The common route already verifies the actual Win32 keyboard focus before
- # every input. It does not need a provider COM apartment just for metadata.
+ # The common route verifies the foreground window and recopies the actual
+ # source before paste. Child focus/caret identity may change inside an editor;
+ # provider COM metadata is not needed for this keyboard/clipboard route.
  return True
 
 def focused_element():
@@ -418,7 +422,7 @@ class App(QWidget):
   threading.Thread(target=lambda:self.bridge.tsf_status.emit(tsf_bridge.activate_installed()),daemon=True).start()
   self._release_start_timer=QTimer(self);self._release_start_timer.setSingleShot(True);self._release_start_timer.timeout.connect(lambda:self.check_release(False));self._release_start_timer.start(15000)
   self._release_timer=QTimer(self);self._release_timer.setInterval(6*60*60*1000);self._release_timer.timeout.connect(lambda:self.check_release(False));self._release_timer.start()
-  _input_record(self,'app.ready.v'+release_updates.VERSION)
+  _input_record(self,'app.ready.v'+release_updates.VERSION+'.b'+release_updates.BUILD)
  def check_update_request(self):
   if self._update_request.requested() and not self.busy and not self.downloading and not getattr(self,'_keyboard_workers',0):self.quit()
  def select_page(self,index):
@@ -683,7 +687,7 @@ class App(QWidget):
     _input_record(self,'gesture.ignored.input',job=job,revision=revision,current_revision=current_revision,cause=_input_activity_cause(self));return
    self._input_active_job=job
    native_focus=focus_guard.capture()
-   if not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
+   if not focus_guard.same_foreground(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
    self.begin_keyboard_capture(key,revision,started,native_focus)
   except Exception as e:self.error(str(e))
  def begin_keyboard_capture(self,key,revision,started,focus):
@@ -708,8 +712,9 @@ class App(QWidget):
     _input_record(self,'capture.completed',job=request['job'],revision=revision,source_chars=len(snapshot.text),duration_ms=(time.monotonic()-started)*1000)
     outcome=(snapshot,'')
    except Exception as error:
-    _input_record(self,'capture.failed',job=request['job'],revision=revision,cause=_input_activity_cause(self),error_message=_input_error_message(str(error)))
-    outcome=(None,str(error))
+    message=str(error)
+    _input_record(self,'capture.failed',job=request['job'],revision=revision,cause=_input_activity_cause(self,message),error_message=_input_error_message(message))
+    outcome=(None,message)
    finally:self._keyboard_workers-=1
    self.bridge.keyboard_captured.emit((request,outcome))
   threading.Thread(target=worker,daemon=True).start()
@@ -725,7 +730,7 @@ class App(QWidget):
   reason='';cause='unknown'
   if request['configuration']!=self.engine_configuration():reason='configuration';cause='configuration'
   elif current_revision!=request['revision']:reason='input';cause=_input_activity_cause(self)
-  elif not focus_guard.unchanged(request['focus']):reason='focus';cause='focus'
+  elif not focus_guard.same_foreground(request['focus']):reason='focus';cause='focus'
   if reason:
    _input_record(self,'capture.dropped.'+reason,job=request.get('job'),revision=request['revision'],current_revision=current_revision,focus=request['focus'],current_focus=_input_current_focus(),cause=cause)
    self._keyboard_request=None;self.busy=False;return
@@ -829,7 +834,8 @@ class App(QWidget):
   job=getattr(self,'_input_active_job',None)
   try:
    hwnd=native_focus.foreground
-   if not focus_guard.unchanged(native_focus):raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
+   current=focus_guard.same_foreground(native_focus) if context[0]=='keyboard' else focus_guard.unchanged(native_focus)
+   if not current:raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
    if not text.strip(): raise ValueError('현재 입력 영역에 번역할 문장이 없습니다.')
    src=guess(text) if self.source.currentText()=='자동' else LANGS[self.source.currentText()]
    dst=LANGS[self.target[key].currentText()]
@@ -856,7 +862,9 @@ class App(QWidget):
   if self._quitting:return
   try:
    hwnd,rid,old,new,context,native_focus=payload
-   if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
+   if context[0]=='keyboard':
+    if not focus_guard.same_foreground(native_focus):raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
+   elif ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus):raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    if context[0]=='keyboard':
     job=getattr(self,'_input_active_job',None)
     _input_record(self,'paste.requested',job=job,focus=native_focus,source_chars=len(old),output_chars=len(new),same_output=old==new)
@@ -871,8 +879,9 @@ class App(QWidget):
       _input_record(self,'paste.delivery.completed',job=job,output_chars=len(new))
       self.bridge.keyboard_applied.emit((True,message))
      except Exception as error:
-      _input_record(self,'paste.delivery.failed',job=job,cause=_input_activity_cause(self),error_message=_input_error_message(str(error)))
-      self.bridge.keyboard_applied.emit((False,str(error)))
+      message=str(error)
+      _input_record(self,'paste.delivery.failed',job=job,cause=_input_activity_cause(self,message),error_message=_input_error_message(message))
+      self.bridge.keyboard_applied.emit((False,message))
      finally:self._keyboard_workers-=1
     threading.Thread(target=worker,daemon=True).start();return
    if context[0]=='tsf':

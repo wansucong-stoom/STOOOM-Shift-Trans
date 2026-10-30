@@ -41,6 +41,7 @@ focus=types.SimpleNamespace(foreground=5,keyboard_window=6,thread_id=7)
 snapshot=main.tsf_bridge.Snapshot(123,b'A'*16,'안녕하세요')
 main.focus_guard.capture=lambda:focus
 main.focus_guard.unchanged=lambda f:f is focus
+main.focus_guard.same_foreground=lambda f:f is focus
 main.ctypes=types.SimpleNamespace(windll=types.SimpleNamespace(user32=types.SimpleNamespace(GetForegroundWindow=lambda:5)))
 main.capture_input=lambda:(_ for _ in ()).throw(AssertionError('UIA read during TSF route'))
 main.focused=lambda:(_ for _ in ()).throw(AssertionError('ValuePattern read during TSF route'))

@@ -36,3 +36,15 @@ def capture():
 def unchanged(snapshot):
  try:return capture()==snapshot
  except (OSError,ValueError):return False
+
+def same_foreground(snapshot):
+ """Common keyboard route: child focus/caret changes stay within one window.
+
+ Native editors can replace a child HWND or move their caret while selecting.
+ Exact source recopy is the final destination check; child HWND equality is not.
+ """
+ try:
+  user=ctypes.WinDLL('user32',use_last_error=True)
+  user.GetForegroundWindow.restype=wintypes.HWND
+  return bool(snapshot.foreground) and int(user.GetForegroundWindow() or 0)==snapshot.foreground
+ except (OSError,ValueError,TypeError):return False

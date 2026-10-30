@@ -90,6 +90,7 @@ class World:
             GetAsyncKeyState=lambda key: 0x8000 if key in self.modifiers else 0)))
         main.focus_guard.capture = self.capture_focus
         main.focus_guard.unchanged = lambda focus: focus is self.focus
+        main.focus_guard.same_foreground = lambda focus: focus is self.focus
         main.focused_element = lambda: (self.rid, None, None)
         main.capture_input = self.capture
 
