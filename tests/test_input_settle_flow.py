@@ -1,4 +1,8 @@
-"""Deterministic input-settling integration; no GUI, hooks or live document."""
+"""Optional legacy provider diagnostic route; no GUI or live document.
+
+The production shortcut now uses the common keyboard route. These retained
+checks still exercise provider settling through an explicit legacy entry.
+"""
 
 import heapq
 import os
@@ -86,12 +90,14 @@ class World:
             GetAsyncKeyState=lambda key: 0x8000 if key in self.modifiers else 0)))
         main.focus_guard.capture = self.capture_focus
         main.focus_guard.unchanged = lambda focus: focus is self.focus
+        main.focus_guard.same_foreground = lambda focus: focus is self.focus
         main.focused_element = lambda: (self.rid, None, None)
         main.capture_input = self.capture
 
 
 class FakeApp:
     run_translation = main.App.run_translation
+    begin_keyboard_capture = main.App.begin_legacy_capture
     poll_input = main.App.poll_input
     cancel_pending_input = main.App.cancel_pending_input
     engine_configuration = main.App.engine_configuration

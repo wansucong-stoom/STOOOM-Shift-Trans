@@ -1,0 +1,3 @@
+/* STOOM original mark: stoom.win, 2026-10-30. Use on a dark background. */
+.stoom-mark { display: inline-block; width: 29px; height: 29px; flex: 0 0 29px; border: 2px solid #e3faff; border-radius: 50%; box-shadow: 0 0 18px rgb(103 216 255 / 38%); position: relative; }
+.stoom-mark::after { content: ""; position: absolute; right: -8px; top: 5px; width: 14px; height: 2px; background: #e3faff; transform: rotate(-35deg); transform-origin: center; }

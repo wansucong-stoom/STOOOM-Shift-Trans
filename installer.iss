@@ -1,7 +1,7 @@
 #define AppName "STOOM Shift Translator"
 #define AppExe "STOOMShiftTranslator.exe"
 #ifndef AppVersion
-#define AppVersion "0.6.1"
+#define AppVersion "0.6.10"
 #endif
 #ifndef BuildRoot
 #define BuildRoot "dist"
@@ -26,12 +26,14 @@ RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=dist
-OutputBaseFilename=STOOM-Translator-v061-TSF-setup
+OutputBaseFilename=STOOM-Translator-v0610-TSF-setup
 SetupIconFile=stoom.ico
-UninstallDisplayIcon={app}\{#AppExe}
+UninstallDisplayIcon={app}\branding\sst\stoom.ico
 Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern
+WizardImageFile=branding\sst\installer.bmp
+WizardSmallImageFile=branding\sst\installer-small.bmp
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 [Files]
@@ -40,8 +42,8 @@ Source: "{#BuildRoot}\STOOMShiftTranslator\*"; DestDir: "{app}"; Flags: ignoreve
 Source: "{#TsfSetup}"; DestName: "STOOMTextService-setup.exe"; Flags: dontcopy
 #endif
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\branding\sst\stoom.ico"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\branding\sst\stoom.ico"; Tasks: desktopicon
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면에 바로가기 만들기"; Flags: unchecked
 #ifdef TsfSetup

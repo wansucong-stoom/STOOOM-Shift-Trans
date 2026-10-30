@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><title>STOOM original mark</title>
+<defs><filter id="halo" x="-180%" y="-180%" width="460%" height="460%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="9.0" result="blur"/><feComposite in="blur" in2="SourceAlpha" operator="out" result="outer"/><feFlood flood-color="#67d8ff" flood-opacity=".38"/><feComposite in2="outer" operator="in"/></filter></defs>
+<g><circle cx="46.5" cy="48.0" r="14.5" filter="url(#halo)"/>
+<circle cx="46.5" cy="48.0" r="13.5" fill="none" stroke="#e3faff" stroke-width="2"/>
+<rect x="53" y="40.5" width="14" height="2" fill="#e3faff" transform="rotate(-35 60 41.5)"/>
+<path fill="#e3faff" d=""/></g></svg>

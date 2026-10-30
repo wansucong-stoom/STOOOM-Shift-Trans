@@ -9,9 +9,13 @@ class U:
  GetWindowThreadProcessId=Call(lambda hwnd,pid:state['thread'] if hwnd!=state['fg'] else 99)
  GetGUIThreadInfo=Call(lambda tid,p:(setattr(p._obj,'hwndFocus',state['focus']) or True))
 f.ctypes.WinDLL=lambda *a,**k:U()
-a=f.capture();assert a==f.Focus(10,11,12);assert f.unchanged(a)
-state['focus']=13;assert not f.unchanged(a)
+a=f.capture();assert a==f.Focus(10,11,12);assert f.unchanged(a) and f.same_foreground(a)
+state['focus']=13;assert not f.unchanged(a) and f.same_foreground(a)
+state['thread']=14;assert f.same_foreground(a)
+state['fg']=15;assert not f.same_foreground(a)
+state['fg']=10
 state['focus']=0
+assert f.same_foreground(a)  # No child focus is required in the keyboard route.
 try:f.capture();raise AssertionError('missing focus accepted')
 except ValueError:pass
-print('Native keyboard focus capture, distinct frame/edit threads, change and missing focus: PASS')
+print('Strict provider identity and common keyboard foreground identity: child/thread changes allowed, other window refused: PASS')

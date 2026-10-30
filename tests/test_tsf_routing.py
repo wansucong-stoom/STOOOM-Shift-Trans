@@ -28,6 +28,8 @@ class App:
         self.input_readiness=Label();self.bridge=types.SimpleNamespace(tsf_captured=Signal(),tsf_applied=Signal())
         self.tsf=types.SimpleNamespace(locate=lambda focus:123,capture=lambda server,focus:snapshot,apply=lambda *a:0)
         self.errors=[];self.starts=[];self.pastes=[]
+        self.keyboard_requests=[]
+    def begin_keyboard_capture(self,*args):self.keyboard_requests.append(args)
     def isActiveWindow(self):return False
     def engine_configuration(self):return ('unchanged',)
     def error(self,message):self.errors.append(message);self.busy=False
@@ -39,6 +41,7 @@ focus=types.SimpleNamespace(foreground=5,keyboard_window=6,thread_id=7)
 snapshot=main.tsf_bridge.Snapshot(123,b'A'*16,'안녕하세요')
 main.focus_guard.capture=lambda:focus
 main.focus_guard.unchanged=lambda f:f is focus
+main.focus_guard.same_foreground=lambda f:f is focus
 main.ctypes=types.SimpleNamespace(windll=types.SimpleNamespace(user32=types.SimpleNamespace(GetForegroundWindow=lambda:5)))
 main.capture_input=lambda:(_ for _ in ()).throw(AssertionError('UIA read during TSF route'))
 main.focused=lambda:(_ for _ in ()).throw(AssertionError('ValuePattern read during TSF route'))
@@ -48,7 +51,7 @@ class Thread:
 main.threading=types.SimpleNamespace(Thread=Thread)
 scheduled=[];main.QTimer=types.SimpleNamespace(singleShot=lambda ms,fn:scheduled.append(fn))
 
-a=App();a.run_translation(('shift',4,main.time.monotonic()))
+a=App();a.begin_tsf_capture('shift',4,main.time.monotonic(),focus,123)
 assert len(a.bridge.tsf_captured.values)==1 and not a.errors
 a.tsf_captured(a.bridge.tsf_captured.values[-1])
 assert len(a.starts)==1 and a.starts[0][4]==('tsf',snapshot) and not scheduled
@@ -63,16 +66,16 @@ assert a.bridge.tsf_applied.values[-1]==(False,'timeout') and not a.pastes
 
 # Read-only failure cannot be retried through less restrictive UIA.
 a=App();a.tsf.capture=lambda *x:(_ for _ in ()).throw(main.tsf_bridge.TsfError('secure'))
-a.run_translation(('shift',4,main.time.monotonic()));a.tsf_captured(a.bridge.tsf_captured.values[-1])
+a.begin_tsf_capture('shift',4,main.time.monotonic(),focus,123);a.tsf_captured(a.bridge.tsf_captured.values[-1])
 assert a.errors==['secure'] and not a.starts and not scheduled
 
 # Only a missing native document context is eligible for the old reader.
 a=App();a.tsf.capture=lambda *x:(_ for _ in ()).throw(main.tsf_bridge.Unavailable())
-a.run_translation(('shift',4,main.time.monotonic()));a.tsf_captured(a.bridge.tsf_captured.values[-1])
-assert a._pending_input and len(scheduled)==1 and not a.errors and not a.starts
+a.begin_tsf_capture('shift',4,main.time.monotonic(),focus,123);a.tsf_captured(a.bridge.tsf_captured.values[-1])
+assert a.keyboard_requests and not scheduled and not a.errors and not a.starts
 scheduled.clear()
 
 # Text typed after the gesture makes the completed capture stale.
-a=App();a.run_translation(('shift',4,main.time.monotonic()));a.tap.activity_snapshot=lambda:(5,0.0)
+a=App();a.begin_tsf_capture('shift',4,main.time.monotonic(),focus,123);a.tap.activity_snapshot=lambda:(5,0.0)
 a.tsf_captured(a.bridge.tsf_captured.values[-1]);assert not a.starts and not a.busy
 print('TSF routing: direct native path, no duplicate paste, secure refusal, unavailable-only fallback and stale capture: PASS')

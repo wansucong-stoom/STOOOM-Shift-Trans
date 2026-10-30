@@ -38,7 +38,8 @@ class Response(io.BytesIO):
 def latest(data=None,raw=None,headers=None,final=updates.API_URL):
     response=Response(raw if raw is not None else json.dumps(metadata() if data is None else data).encode(),final,headers)
     with patch.object(updates,'_open',return_value=response) as opened:
-        result=updates.check_latest()
+        # Simulate the old installed version, independently of today's build.
+        result=updates.check_latest(current_version='0.6.1')
         opened.assert_called_once_with(updates.API_URL)
         return result
 

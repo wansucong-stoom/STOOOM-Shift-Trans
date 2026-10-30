@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "id": "stoom-product-identity-v1",
+  "reference": "https://stoom.win/",
+  "font": {
+    "family": "Inter",
+    "file": "Inter-variable.ttf",
+    "wght": 850,
+    "opsz": 14,
+    "code_px": 10.5,
+    "code_center_from_circle_origin": [
+      14.5,
+      17
+    ],
+    "letter_spacing_em": 0
+  },
+  "geometry": {
+    "icon_canvas": 40,
+    "circle_outer_diameter": 29,
+    "circle_origin": [
+      3,
+      5.5
+    ],
+    "stroke": 2,
+    "diagonal_size": [
+      14,
+      2
+    ],
+    "diagonal_center_from_circle_origin": [
+      28,
+      8
+    ],
+    "diagonal_degrees": -35
+  },
+  "colour": {
+    "mark": "#e3faff",
+    "glow": "#67d8ff",
+    "backing": "#071019",
+    "glow_opacity": 0.38
+  },
+  "original_glow": {
+    "blur_px": 18,
+    "transparent_canvas": 96,
+    "circle_origin": [
+      32,
+      33.5
+    ]
+  },
+  "icon_medium": {
+    "blur_px": 4.5,
+    "backing_radius": 8,
+    "sizes": [
+      16,
+      20,
+      24,
+      32,
+      40,
+      48,
+      64,
+      96,
+      128,
+      256
+    ],
+    "minimum_code_pixels": 5,
+    "limitation": "Compact icon halo is bounded by its dark backing; full transparent export retains original18px halo.16px text legibility is limited."
+  },
+  "lockup": {
+    "icon_px": 48,
+    "gap_px": 10,
+    "word_family": "Inter",
+    "word_px": 20,
+    "word_wght": 850,
+    "word_opsz": 14,
+    "word_letter_spacing_em": 0.11
+  },
+  "products": {
+    "sst": "SST",
+    "pwh": "Pwh",
+    "original": ""
+  },
+  "files": {
+    "build_product_identity.py": "40b65552d771da94bc7e0da3d42d7b96c2c78a426fef0be50d9f88e4bfb913d1",
+    "font-provenance.json": "21542aab1f06ff79b080f575d45482024efb38b37fb597dd738a60c52d7a3ecb",
+    "Inter-variable.ttf": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+    "OFL-Inter.txt": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+    "original/icon-128.png": "f587b4222f5ecdbf0a65bc2c0510e0032c102498a4271b3e29f300c676efa934",
+    "original/icon-16.png": "a698e0b23be5fb86d28cf069d866aa3d4d40f85af2324f0e628c1722a8c9f3d6",
+    "original/icon-20.png": "07c6acb08bc84509cbe3c56c2080d3feeaa8e8f17538d1fe8e315725bc85a103",
+    "original/icon-24.png": "a3941431ee5320fe8b8bc00ef179024ff6a25a0201b024e7fc940aefaa57d770",
+    "original/icon-256.png": "9833ec8ddaa886dc01feb5231abe5da44fdae0f445eac7d2efe9ab26292e7f8b",
+    "original/icon-32.png": "519631efd79b9a4678419210c1000c9c086740dd3c7eb6dd4f8bd99269b1f6fd",
+    "original/icon-40.png": "e88c5fe41072cc1efeb67b0f34c568201bf18c177a2eb0b64aa5c191f14a7962",
+    "original/icon-48.png": "28c29e0fa53b09c32272949b695222c29ffed7fcb0157a695b0ef41b0f5a7a10",
+    "original/icon-64.png": "82042d934afafc911297a2cc2701710cda9f2df9dd66d30c7be025dc189ead49",
+    "original/icon-96.png": "76c642f0d052f54f73114c73c38bd8e9646ab7a96e112b7d703aca6187271c98",
+    "original/installer-small.bmp": "83ace7dcab156033ef85508b34228c77ae9615a0ec587fed2ea80b8dd48fc3f0",
+    "original/installer.bmp": "137df5d2cf9d68afacb7d77d39e70eda0312020796a536a3c833dd28d857a92c",
+    "original/lockup-dark-1x.png": "5a575a75db1b0c232a091e0ff314a260ed7b437f4440faf6e2dad9476e0aa8f7",
+    "original/lockup-dark-3x.png": "3085f55b5b0115d020cf558b0501b361042cd3cc9a562398514875024f1d10d5",
+    "original/lockup-dark.svg": "3b16fae0d0b4887d3169628b798f9275e57e7949998cc16a6211aec2fecc0550",
+    "original/lockup-light-1x.png": "b26165e3ca71ca799ed7fbc9867ceb37ed04d699f72ae2960cad236e20ec8bc3",
+    "original/lockup-light-3x.png": "9dcb76abef9a0bd0272f1eeade554857da7843b7a746271ddaa610f5552ebb87",
+    "original/lockup-light.svg": "cfa0b0e6146dfc4f03dd153cdbeed9dd875993834fd4e753fbb36b3ffd4d4ec6",
+    "original/mark-full-glow-alpha.png": "757b1a77fa6f12d2665369bf7428c442b5cb156872905310d52b8cf64f7ebb75",
+    "original/mark-full-glow-dark.png": "6dac7236c4d29a96f9ddd407d2008deea4a946699bc35e81427e1d3d3c20a3a5",
+    "original/mark-full-glow.svg": "de8f848f63cbeef4927ac0c059546eb6b993a5fe9fbba451f3d4503c392fee9d",
+    "original/mark.svg": "d4da44db1183ab478306d2ab287392a6cd4232af65970e1b72ddf7cc253535dc",
+    "original/stoom.ico": "f2cbd425639d5304110a02f96eef30953f912934a1a84fd5a282fe4f3f43c37c",
+    "pwh/icon-128.png": "65de1a1bffb7e1ae5e36c392bc7347d44c638ad697f5bd62e939bed8aca7568a",
+    "pwh/icon-16.png": "b0b25aed00b64c64d4c947fd8e0220bbd6dc8a4c8de5134cf9a65e847d4b72eb",
+    "pwh/icon-20.png": "a73e66ed3167196b87141c7305f72b1cc882c229ce6c6f49d6568215e7e32dab",
+    "pwh/icon-24.png": "a1acd8e9e962e95c7329a2440e0e60b5827ca33e71de55e03b8792e795a55143",
+    "pwh/icon-256.png": "a1b8eea130ebe2f67e01b29cee9911ff1bfb6662851291111a786edc8a34e9cd",
+    "pwh/icon-32.png": "fc7d0f6c9c545edf5139ed59efb1f53561e72ac34b51f8d6b9b1a4c7e3e0cc46",
+    "pwh/icon-40.png": "5b2859041eff03e82b1db1fd1e12cb8a92bd35a4eb5412f0fe86a266d2a8f00c",
+    "pwh/icon-48.png": "9860ab5729ac587d2db8160a9045375545c9ad7019bcacbe3d531e578d763a1e",
+    "pwh/icon-64.png": "1a27e3c7dd4c04aa8b6416eab0fa016e3fa0d3ed8aaffdca6deb3778fbe7457b",
+    "pwh/icon-96.png": "a821c6ec1d592a03d74e8e25ab1c7c721b9c731d5047a3fdd2bb5e6e6e58b51a",
+    "pwh/installer-small.bmp": "76b6016e5c53bf5bc1b8554a25948304a5204e4b88ccb89e2d3d7a946656b6c7",
+    "pwh/installer.bmp": "b004ef7a6fea2f71049a3d59c9eee4fa480e1233e8c03d0ea1c22d1abc68e4d9",
+    "pwh/lockup-dark-1x.png": "ff0c7a6dd988a744b11c70871732dc81967dc47e3012915cd169182cf9338aae",
+    "pwh/lockup-dark-3x.png": "4f4ce04879e455bcef519f3a13e63554ec856ca1cfd0e294764b2f59d53b1b56",
+    "pwh/lockup-dark.svg": "2993bd08ab894a3ef2ceb43fba3b1d65e54ca8cdd035e4a6c9ee594cf4572351",
+    "pwh/lockup-light-1x.png": "91223ce096c5b8a91dbcedb0ec624a196fce9e98236f3fc0995111d4066dd0d2",
+    "pwh/lockup-light-3x.png": "cdc6f4acf41bf9fad742613753ac1d2ea44e178e4b5fe2ab7c024eef7cabfbb4",
+    "pwh/lockup-light.svg": "16c64b14935e371cd08b744ee5c4ce50e51c876d95d47ad8229bc0a5dcfa9b25",
+    "pwh/mark-full-glow-alpha.png": "02f4221ac5ee43dd784d5b73d588a2a1c81c74648d620bef57f6d4ca5b19ec42",
+    "pwh/mark-full-glow-dark.png": "0fc19c715f2be32d5488b631cc700038f33050d1ee2e38042d88f9e7676f62ce",
+    "pwh/mark-full-glow.svg": "eafdfff84f2073788e5cc7820710a6508c8ce2915a99bf845b324155a11a1f03",
+    "pwh/mark.svg": "19aa0c88defeef13a8f39e65add894e5ad1c9923a5c99dda54dda7c92764858e",
+    "pwh/stoom.ico": "dbf6747c80fb86da182e67ab81e7bfdcfe21fc68dc4855dd8902b87030d51f6e",
+    "README.md": "8bd8760488f7b82d17b3fccb52a7d8290520362b63ca7bf06e188dc4727146d2",
+    "sst/icon-128.png": "b81923f2a1c15aefe533977aff1e5297d2b7ee62d5b9ea91e5351f5e4ee61fcc",
+    "sst/icon-16.png": "1ad0c5de73691d6162d4733e0ffd40063575228b9e69fb2048ef13037659a2ac",
+    "sst/icon-20.png": "3e84008c9009ea9304c67ab93d9be6286823c78b864690a09c9f5a08c4751752",
+    "sst/icon-24.png": "96278a4e1cd3bd91e8e9d1525af9195c16904f73478739f1b2da45ec68f5f903",
+    "sst/icon-256.png": "3f2b526691106de823680710d13bdf89d3ad02a2415b60c75eeeaebadcf2a7e6",
+    "sst/icon-32.png": "efe2d3790153d07972ad52351d66e60daea676306da239b4a1e42b221f90ac6c",
+    "sst/icon-40.png": "e5fc2712be105d6dd1994f7999c666a2d4e96d960faa450383a8ddac15c25a54",
+    "sst/icon-48.png": "09cc0ae1bb3808c45aa19ebab013585246fbb63520f88ffa003987a8b37d60ac",
+    "sst/icon-64.png": "325def22e2ddbae74681661f9dee5fbc1e1d91c893ecca8d031601b21455bfec",
+    "sst/icon-96.png": "00525555926c7198a0327bc1620f82871ab6cc979013def188d3acd8f2c04e43",
+    "sst/installer-small.bmp": "32888e0bb222e9b383431caf598ae78022b3cd805fdb5687ff25b097f11cca80",
+    "sst/installer.bmp": "57c3413cca24948e67e9004221af0515b07af6d444a3d6930e8d03589aaf987b",
+    "sst/lockup-dark-1x.png": "5d3f20507bb019c88caec0709d1a08e298f265f30e2c183ce06460689ff536d0",
+    "sst/lockup-dark-3x.png": "08d87d6059cb490ba5f6d1f4ed14223f21e05d399881182da0863779dccde448",
+    "sst/lockup-dark.svg": "f70d7c91eaf98dc827a10cc07ed832c2d0fd1e56bc32332eb31df8ff16ed68f4",
+    "sst/lockup-light-1x.png": "062511970fa347b3897135599b59a1ea740ed4d51ef62742819a7ec7ba69417a",
+    "sst/lockup-light-3x.png": "a4b7aeee118c9560256e7624e56ac1023b7cda345fffa4a9159ea812ee1d419e",
+    "sst/lockup-light.svg": "ba9a285feecc9e3273974af38fd0d463b68311fc252ba71a86ffed6b58e4c5ab",
+    "sst/mark-full-glow-alpha.png": "e24b80681a23011c1c19481fb691eba1ec8184b574871031d243de1e074b46db",
+    "sst/mark-full-glow-dark.png": "33801e92b64e3ecaa7fe63d969fb1352350f3118c5c044c3e0f0f184f8704dea",
+    "sst/mark-full-glow.svg": "31dff4f6b42e427e5ce9e4cbc6c76a73075665304d9b39b204ba8e504935e67d",
+    "sst/mark.svg": "fb2736f6a23c4dbf6c09123c7173a83f5d099aa7e9b16cf1b1fffe8f8b8ad606",
+    "sst/stoom.ico": "8bf96353def7e81b15b2ed90d7bffac80bf123e0eed7cace5a1b3309eec116a3",
+    "stoom-mark-original.css": "bf79fb030a017effc8f53675b576431a23e2b939edccf25cfea937ed0cd1dccf",
+    "stoom-product-marks.css": "fbf5f3f286087229ae0584ee1f27adb4d2a9c9a617bffa9aa1618167e46952a5"
+  }
+}
