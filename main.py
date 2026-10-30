@@ -17,6 +17,7 @@ import tsf_bridge
 import update_control
 import release_updates
 import keyboard_access
+import input_diagnostics
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal, QTimer, QUrl
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QCheckBox, QSystemTrayIcon, QMenu, QMessageBox, QFileDialog, QStackedWidget, QFrame, QProgressBar
@@ -41,6 +42,46 @@ class Bridge(QObject):
  tsf_captured=Signal(object); tsf_applied=Signal(object); tsf_status=Signal(str)
  release_event=Signal(object); release_progress=Signal(object)
  keyboard_captured=Signal(object); keyboard_applied=Signal(object)
+
+_INPUT_ERROR_MESSAGES=frozenset((
+ '텍스트 입력 위치를 확인하지 못했습니다.','Windows가 입력 전달을 허용하지 않았습니다.',
+ '화면 좌표를 확인하지 못했습니다.','마우스 위치가 바뀌어 자동 선택을 취소했습니다.',
+ '입력창의 포커스가 바뀌어 번역을 취소했습니다.','새 키보드 입력이나 클릭·스크롤이 감지되어 번역을 취소했습니다.',
+ '단축키에서 손을 뗀 뒤 다시 시도하세요.','조합 확정용 공백의 추가를 확인하지 못했습니다. 입력창을 확인하세요.',
+ '조합 확정용 공백을 확인하지 못했습니다. 입력창을 확인하세요.','선택·복사할 글이 없습니다. 글을 선택한 뒤 다시 시도하세요.',
+ '번역할 글이 없습니다.','문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.',
+ '선택한 텍스트가 너무 길거나 텍스트 이외의 개체가 포함되어 있습니다.','복사된 원문이 바뀌어 번역을 취소했습니다.',
+ '번역 결과가 비어 있거나 너무 깁니다.','새 키보드 입력이 있어 교체를 취소했습니다.',
+ '선택 위치가 바뀌어 교체를 취소했습니다.','선택된 원문이 바뀌어 교체를 취소했습니다.',
+ '클립보드가 바뀌어 교체를 취소했습니다.','키보드 입력 위치가 바뀌어 취소했습니다.',
+ '키보드 입력 위치가 바뀌어 교체하지 않았습니다.','현재 입력 영역에 번역할 문장이 없습니다.',
+ '입력창의 응답 확인 시간이 초과되었습니다. 다시 시도할 수 있습니다.',
+ '필요한 언어팩이 없습니다. 설정에서 다운로드하세요.','원문과 목표 언어가 같습니다.',
+ '사용자 번역 엔진 실행 파일을 선택하세요.','원문 언어를 판별할 수 없습니다.',
+ '번역 엔진 실행 중 오류가 발생했습니다.','번역 엔진을 준비하고 있습니다.',
+ '번역문은 전달했지만 결과를 확인하지 못했습니다. 입력창을 확인해 주세요.',
+ '번역문을 붙여넣었으나 이전 클립보드를 복원하지 못했습니다.'))
+
+def _input_error_message(message):
+ # Engine exceptions can include a sentence or an executable path. Retain
+ # fixed input toasts verbatim, and use one generic message for everything else.
+ return message if isinstance(message,str) and message in _INPUT_ERROR_MESSAGES else '번역 작업을 완료하지 못했습니다.'
+
+def _input_record(app,phase,**details):
+ trace=getattr(app,'_input_trace',None)
+ if trace is None:return
+ try:
+  details.setdefault('job',getattr(app,'_input_active_job',None))
+  trace.record(phase,**details)
+ except Exception:pass
+
+def _input_activity_cause(app):
+ try:return app.tap.activity_cause()
+ except Exception:return 'unknown'
+
+def _input_current_focus():
+ try:return focus_guard.capture()
+ except Exception:return None
 
 def keyboard_safety():
  # The common route already verifies the actual Win32 keyboard focus before
@@ -204,7 +245,7 @@ def install_pack(k,progress=None):
 
 class Tap:
  def __init__(self,bridge):
-  self.bridge=bridge; self.down=set(); self.last={}; self.used=set(); self.pending=set(); self.started={}; self._activity=(0,0.0);self._pointer_buttons=set()
+  self.bridge=bridge; self.down=set(); self.last={}; self.used=set(); self.pending=set(); self.started={}; self._activity=(0,0.0);self._pointer_buttons=set();self._activity_cause='unknown'
   self.listener=keyboard.Listener(on_press=self.press,on_release=self.release,win32_event_filter=self.event_filter)
   self.mouse_listener=mouse.Listener(on_click=self.pointer_click,on_scroll=self.pointer_activity,on_move=self.pointer_move,win32_event_filter=self.event_filter)
  def event_filter(self,msg,data):
@@ -212,13 +253,15 @@ class Tap:
  def pointer_move(self,*args):
   # pynput 1.8 passes (x, y, injected), older versions passed (x, y).
   # Free motion does not alter a selection. A real held-button drag does.
-  if self._pointer_buttons:self.pointer_activity()
+  if self._pointer_buttons:self.pointer_activity();self._activity_cause='drag'
  def pointer_click(self,x,y,button,pressed,*extra):
   if pressed:self._pointer_buttons.add(button)
   else:self._pointer_buttons.discard(button)
   self.pointer_activity()
+  self._activity_cause='click'
  def pointer_activity(self,*args):
   revision,_=self._activity;self._activity=(revision+1,time.monotonic())
+  self._activity_cause='scroll'
   self.last.clear();self.pending.clear()
  def kind(self,k):
   if k in (keyboard.Key.shift,keyboard.Key.shift_l,keyboard.Key.shift_r): return 'shift'
@@ -237,6 +280,7 @@ class Tap:
   kind=self.kind(k); now=time.monotonic()
   if kind is None:
    revision,_=self._activity; self._activity=(revision+1,now)
+   self._activity_cause='typing'
    self.last.clear(); self.used.update(self.down); self.pending.clear()
    return
   if kind in self.down: return
@@ -247,6 +291,8 @@ class Tap:
   self.down.add(kind); self.started[kind]=now
  def activity_snapshot(self):
   return self._activity
+ def activity_cause(self):
+  return self._activity_cause
  def release(self,k):
   kind=self.kind(k); now=time.monotonic()
   if kind is None:
@@ -265,6 +311,7 @@ class Tap:
 class App(QWidget):
  def __init__(self):
   super().__init__(); self.setWindowTitle('STOOM Shift Translator — 설정'); self.resize(850,590); self.setMinimumSize(720,520)
+  self._input_trace=input_diagnostics.Trace(APP/'input-diagnostics.jsonl');self._input_job_counter=0;self._input_active_job=None
   self.setStyleSheet("""
    QWidget { background: #fff; color: #172f3e; font-family: 'Malgun Gothic'; font-size: 10pt; }
    QFrame#sidebar { background: #f7f8fa; border-right: 1px solid #e6e9ed; }
@@ -371,6 +418,7 @@ class App(QWidget):
   threading.Thread(target=lambda:self.bridge.tsf_status.emit(tsf_bridge.activate_installed()),daemon=True).start()
   self._release_start_timer=QTimer(self);self._release_start_timer.setSingleShot(True);self._release_start_timer.timeout.connect(lambda:self.check_release(False));self._release_start_timer.start(15000)
   self._release_timer=QTimer(self);self._release_timer.setInterval(6*60*60*1000);self._release_timer.timeout.connect(lambda:self.check_release(False));self._release_timer.start()
+  _input_record(self,'app.ready.v'+release_updates.VERSION)
  def check_update_request(self):
   if self._update_request.requested() and not self.busy and not self.downloading and not getattr(self,'_keyboard_workers',0):self.quit()
  def select_page(self,index):
@@ -611,8 +659,18 @@ class App(QWidget):
   self.progress_time.setText(f'진행 중 · {elapsed//60}분 {elapsed%60}초 경과  |  완료될 때까지 기다려 주세요.')
  def run_translation(self,gesture):
   key,revision,started=gesture if isinstance(gesture,tuple) else (gesture,self.tap.activity_snapshot()[0],time.monotonic())
-  if self._quitting or getattr(self,'_quit_requested',False) or getattr(self,'_release_installing',False) or self.busy or getattr(self,'_keyboard_workers',0) or self.isActiveWindow() or self.target[key].currentText()=='사용 안 함': return
+  self._input_job_counter=getattr(self,'_input_job_counter',0)+1;job=self._input_job_counter
+  _input_record(self,'gesture.received',job=job,revision=revision)
+  ignored=''
+  if self._quitting or getattr(self,'_quit_requested',False):ignored='shutdown'
+  elif getattr(self,'_release_installing',False):ignored='updating'
+  elif self.busy or getattr(self,'_keyboard_workers',0):ignored='busy'
+  elif self.isActiveWindow():ignored='settings'
+  elif self.target[key].currentText()=='사용 안 함':ignored='disabled'
+  if ignored:
+   _input_record(self,'gesture.ignored.'+ignored,job=job,revision=revision);return
   if self.engine_initializing:
+   _input_record(self,'gesture.ignored.preparing',job=job,revision=revision,error_message='번역 엔진을 준비하고 있습니다.')
    if not self._startup_wait_notified:
     self._startup_wait_notified=True
     self.tray.showMessage('STOOM','번역 엔진을 준비하고 있습니다.',QSystemTrayIcon.MessageIcon.Information,2000)
@@ -620,14 +678,20 @@ class App(QWidget):
   try:
    # Carry the hook's revision/time through the Qt queue: text typed after
    # the gesture must not silently become part of this request.
-   if self.tap.activity_snapshot()[0]!=revision:return
+   current_revision=self.tap.activity_snapshot()[0]
+   if current_revision!=revision:
+    _input_record(self,'gesture.ignored.input',job=job,revision=revision,current_revision=current_revision,cause=_input_activity_cause(self));return
+   self._input_active_job=job
    native_focus=focus_guard.capture()
    if not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
    self.begin_keyboard_capture(key,revision,started,native_focus)
   except Exception as e:self.error(str(e))
  def begin_keyboard_capture(self,key,revision,started,focus):
-  request={'key':key,'revision':revision,'focus':focus,'configuration':self.engine_configuration()}
+  if getattr(self,'_input_active_job',None) is None:
+   self._input_job_counter=getattr(self,'_input_job_counter',0)+1;self._input_active_job=self._input_job_counter
+  request={'key':key,'revision':revision,'focus':focus,'configuration':self.engine_configuration(),'job':self._input_active_job,'started':started}
   self._keyboard_request=request;self.busy=True
+  _input_record(self,'capture.requested',job=request['job'],revision=revision,focus=focus)
   self._keyboard_workers=getattr(self,'_keyboard_workers',0)+1
   QTimer.singleShot(4000,lambda:self.keyboard_capture_timeout(request))
   self.input_readiness.setText('현재 입력창 · 선택·복사 확인 중')
@@ -635,12 +699,17 @@ class App(QWidget):
    try:
     activity=lambda:(-1,0.0) if self._quitting or getattr(self,'_quit_requested',False) or self._keyboard_request is not request else self.tap.activity_snapshot()
     env=keyboard_access.Windows(focus,activity,keyboard_safety)
-    driver=keyboard_access.Driver(env)
+    if env is not None:env.activity_cause=lambda:_input_activity_cause(self)
+    report=lambda phase,**details:_input_record(self,phase,job=request['job'],**details)
+    driver=keyboard_access.Driver(env,report=report)
     # Selection/navigation can commit composition without modifying the text.
     # Some editors do not copy a lone space, so it cannot be a prerequisite.
     snapshot=driver.capture(revision,commit_space=False)
+    _input_record(self,'capture.completed',job=request['job'],revision=revision,source_chars=len(snapshot.text),duration_ms=(time.monotonic()-started)*1000)
     outcome=(snapshot,'')
-   except Exception as error:outcome=(None,str(error))
+   except Exception as error:
+    _input_record(self,'capture.failed',job=request['job'],revision=revision,cause=_input_activity_cause(self),error_message=_input_error_message(str(error)))
+    outcome=(None,str(error))
    finally:self._keyboard_workers-=1
    self.bridge.keyboard_captured.emit((request,outcome))
   threading.Thread(target=worker,daemon=True).start()
@@ -649,10 +718,18 @@ class App(QWidget):
    self.error('입력창의 응답 확인 시간이 초과되었습니다. 다시 시도할 수 있습니다.')
  def keyboard_captured(self,payload):
   request,(snapshot,error)=payload
-  if self._quitting or self._keyboard_request is not request:return
+  if self._quitting or self._keyboard_request is not request:
+   _input_record(self,'capture.dropped.stale',job=request.get('job'),revision=request['revision'],cause='shutdown' if self._quitting else 'cancel');return
   if error:self.error(error);return
-  if request['configuration']!=self.engine_configuration() or self.tap.activity_snapshot()[0]!=request['revision'] or not focus_guard.unchanged(request['focus']):
+  current_revision=self.tap.activity_snapshot()[0]
+  reason='';cause='unknown'
+  if request['configuration']!=self.engine_configuration():reason='configuration';cause='configuration'
+  elif current_revision!=request['revision']:reason='input';cause=_input_activity_cause(self)
+  elif not focus_guard.unchanged(request['focus']):reason='focus';cause='focus'
+  if reason:
+   _input_record(self,'capture.dropped.'+reason,job=request.get('job'),revision=request['revision'],current_revision=current_revision,focus=request['focus'],current_focus=_input_current_focus(),cause=cause)
    self._keyboard_request=None;self.busy=False;return
+  _input_record(self,'capture.accepted',job=request.get('job'),revision=request['revision'],source_chars=len(snapshot.text))
   self._keyboard_request=None
   self.start_translation(request['key'],request['focus'],(),snapshot.text,('keyboard',snapshot))
  def keyboard_applied(self,result):
@@ -749,6 +826,7 @@ class App(QWidget):
    QTimer.singleShot(40,lambda:self.poll_input(request))
   except Exception as e:self.error(str(e))
  def start_translation(self,key,native_focus,rid,text,context):
+  job=getattr(self,'_input_active_job',None)
   try:
    hwnd=native_focus.foreground
    if not focus_guard.unchanged(native_focus):raise ValueError('키보드 입력 위치가 바뀌어 취소했습니다.')
@@ -760,9 +838,18 @@ class App(QWidget):
     if not external_path or not Path(external_path).is_file(): raise ValueError('사용자 번역 엔진 실행 파일을 선택하세요.')
    else: route=path_for(src,dst)
    self.busy=True
+   model_ids=['external'] if use_external else list(route)
+   _input_record(self,'model.started',job=job,focus=native_focus,source_chars=len(text),model_ids=model_ids)
    def worker():
-    try: self.bridge.done.emit((hwnd,rid,text,translate_external(external_path,text,src,dst) if use_external else translate_route(text,route),context,native_focus))
-    except Exception as e: self.bridge.error.emit(str(e))
+    started=time.monotonic()
+    try:
+     result=translate_external(external_path,text,src,dst) if use_external else translate_route(text,route)
+     _input_record(self,'model.completed',job=job,source_chars=len(text),output_chars=len(result),same_output=result==text,model_ids=model_ids,duration_ms=(time.monotonic()-started)*1000)
+     self.bridge.done.emit((hwnd,rid,text,result,context,native_focus))
+    except Exception:
+     message='번역 엔진 실행 중 오류가 발생했습니다.'
+     _input_record(self,'model.failed',job=job,source_chars=len(text),model_ids=model_ids,duration_ms=(time.monotonic()-started)*1000,error_message=message)
+     self.bridge.error.emit(message)
    threading.Thread(target=worker,daemon=True).start()
   except Exception as e: self.error(str(e))
  def apply_result(self,payload):
@@ -771,14 +858,21 @@ class App(QWidget):
    hwnd,rid,old,new,context,native_focus=payload
    if ctypes.windll.user32.GetForegroundWindow()!=hwnd or not focus_guard.unchanged(native_focus): raise ValueError('키보드 입력 위치가 바뀌어 교체하지 않았습니다.')
    if context[0]=='keyboard':
+    job=getattr(self,'_input_active_job',None)
+    _input_record(self,'paste.requested',job=job,focus=native_focus,source_chars=len(old),output_chars=len(new),same_output=old==new)
     self._keyboard_workers=getattr(self,'_keyboard_workers',0)+1
     def worker():
      try:
       activity=lambda:(-1,0.0) if self._quitting or getattr(self,'_quit_requested',False) else self.tap.activity_snapshot()
       env=keyboard_access.Windows(native_focus,activity,keyboard_safety)
-      message=keyboard_access.Driver(env).apply(context[1],new)
+      if env is not None:env.activity_cause=lambda:_input_activity_cause(self)
+      report=lambda phase,**details:_input_record(self,phase,job=job,**details)
+      message=keyboard_access.Driver(env,report=report).apply(context[1],new)
+      _input_record(self,'paste.delivery.completed',job=job,output_chars=len(new))
       self.bridge.keyboard_applied.emit((True,message))
-     except Exception as error:self.bridge.keyboard_applied.emit((False,str(error)))
+     except Exception as error:
+      _input_record(self,'paste.delivery.failed',job=job,cause=_input_activity_cause(self),error_message=_input_error_message(str(error)))
+      self.bridge.keyboard_applied.emit((False,str(error)))
      finally:self._keyboard_workers-=1
     threading.Thread(target=worker,daemon=True).start();return
    if context[0]=='tsf':
@@ -890,6 +984,7 @@ class App(QWidget):
    self.busy=False
    self.error('번역문은 전달했지만 결과를 확인하지 못했습니다. 입력창을 확인해 주세요.')
  def error(self,msg):
+  _input_record(self,'toast.error',error_message=_input_error_message(msg))
   self.cancel_pending_input(); self.busy=False; self.status.setText(msg); self.tray.showMessage('STOOM 번역 취소',msg)
  def closeEvent(self,event): event.ignore(); self.hide()
  def quit(self):
@@ -907,7 +1002,10 @@ class App(QWidget):
    self._clipboard_lease=None
   self.tap.listener.stop()
   if hasattr(self.tap,'mouse_listener'):self.tap.mouse_listener.stop()
-  self.tray.hide(); QApplication.quit()
+  self.tray.hide()
+  _input_record(self,'app.shutdown',cause='shutdown')
+  if getattr(self,'_input_trace',None) is not None:self._input_trace.close(timeout=1)
+  QApplication.quit()
 
 if __name__=='__main__':
  if len(sys.argv)>1 and sys.argv[1]=='--check-pack':

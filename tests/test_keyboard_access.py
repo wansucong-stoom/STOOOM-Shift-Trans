@@ -159,4 +159,23 @@ assert [(e.key.vk,e.key.flags) for e in sent]==[(k.CTRL,0),(ord('V'),0),(ord('V'
 assert all(e.kind==1 and e.key.extra==k.INPUT_TAG for e in sent)
 sent.clear();k.Windows.chord(native,k.SHIFT,k.LEFT)
 assert sent[1].key.flags==1 and sent[2].key.flags==3
+
+# Stage reports distinguish an actual paste command from a capture-only run,
+# while keeping source/output contents out of the diagnostic callback.
+reports=[]
+e=Env('private source',(0,14))
+d=k.Driver(e,e.factory,report=lambda phase,**details:reports.append((phase,details)))
+s=d.capture(7);d.apply(s,'private translation')
+assert 'source_confirmed' in [phase for phase,_ in reports]
+assert [phase for phase,_ in reports].count('paste_sent')==1
+assert 'private source' not in repr(reports) and 'private translation' not in repr(reports)
+e.revision+=1;e.activity_cause=lambda:'scroll'
+raises(k.Cancelled,lambda:d.apply(s,'private translation'))
+assert reports[-1][0]=='guard_cancelled' and reports[-1][1]['cause']=='scroll'
+
+# A failed logger cannot interrupt selection or paste.
+def broken_report(*args,**details):raise OSError('disk unavailable')
+e=Env('원문',(0,2));d=k.Driver(e,e.factory,report=broken_report)
+d.apply(d.capture(7),'Translated')
+assert e.text=='Translated' and e.pasted==1
 print('Common keyboard path: source-preserving paragraph selection, hosts without whitespace-only copy, optional legacy space check, one paste, Unicode and stale-input rejection: PASS')

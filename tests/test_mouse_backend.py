@@ -44,8 +44,10 @@ main.keyboard_access.Driver(env).guard(baseline[0])
 # invalidate a stored selection; filtering must not mute real interaction.
 listener._handle_message(0,listener.WM_LBUTTONDOWN,ctypes.addressof(data))
 assert tap.activity_snapshot()[0]==baseline[0]+1 and not tap.pending and not tap.last
+assert tap.activity_cause()=='click'
 listener._handle_message(0,listener.WM_MOUSEMOVE,ctypes.addressof(data))
 assert tap.activity_snapshot()[0]==baseline[0]+2,'held-button drag must invalidate selection'
+assert tap.activity_cause()=='drag'
 listener._handle_message(0,listener.WM_LBUTTONUP,ctypes.addressof(data))
 assert tap.activity_snapshot()[0]==baseline[0]+3
 listener._handle_message(0,listener.WM_MOUSEMOVE,ctypes.addressof(data))
@@ -53,6 +55,7 @@ assert tap.activity_snapshot()[0]==baseline[0]+3,'released-button motion must no
 data.mouseData=120<<16
 listener._handle_message(0,listener.WM_MOUSEWHEEL,ctypes.addressof(data))
 assert tap.activity_snapshot()[0]==baseline[0]+4
+assert tap.activity_cause()=='scroll'
 
 before=tap.activity_snapshot()
 data.dwExtraInfo=main.keyboard_access.INPUT_TAG
@@ -65,4 +68,6 @@ keydata.vkCode=0x43;keydata.dwExtraInfo=main.keyboard_access.INPUT_TAG
 assert tap.listener._convert(0,0x100,ctypes.addressof(keydata)) is None
 keydata.dwExtraInfo=0
 assert tap.listener._convert(0,0x100,ctypes.addressof(keydata)) is not None
+tap.press(keyboard.KeyCode.from_char('x'))
+assert tap.activity_cause()=='typing'
 print('Installed Windows pynput dispatch: old motion cancellation reproduced; free motion ignored; clicks/drags/scrolls invalidate; tagged input ignored; pending taps survive motion: PASS')

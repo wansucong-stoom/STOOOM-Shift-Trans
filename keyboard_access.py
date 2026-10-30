@@ -80,9 +80,46 @@ class Windows:
         if not window or self.u.GetAncestor(window,2)!=self.focus.foreground:return None
         return point.x,point.y
     def _send(self,events):
+        if not events:return
         batch=(INPUT*len(events))(*events)
-        if self.u.SendInput(len(batch),batch,C.sizeof(INPUT))!=len(batch):
+        accepted=int(self.u.SendInput(len(batch),batch,C.sizeof(INPUT)))
+        if accepted!=len(batch):
+            report=getattr(self,'report',lambda *args,**details:None)
+            report('input_partial',accepted=accepted,expected=len(batch))
+            # SendInput may accept only a prefix. Release only downs in that
+            # prefix which have no matching up. Never retry a copy/paste/down
+            # or release unrelated physical keys/buttons.
+            remaining=self._unreleased(events[:max(0,min(accepted,len(events)))])
+            blocked=0
+            for _ in range(len(remaining)+1):
+                if not remaining:break
+                cleanup=(INPUT*len(remaining))(*remaining)
+                released=int(self.u.SendInput(len(cleanup),cleanup,C.sizeof(INPUT)))
+                report('input_release',accepted=released,expected=len(cleanup))
+                if not released:
+                    blocked+=1
+                    if blocked>=2:break
+                remaining=remaining[max(0,min(released,len(remaining))):]
             raise KeyboardError('Windows가 입력 전달을 허용하지 않았습니다.')
+    @staticmethod
+    def _unreleased(events):
+        pending={}
+        for event in events:
+            if event.kind==1:
+                key=event.key;identity=('key',key.vk,key.scan,key.flags & ~2)
+                if key.flags & 2:pending.pop(identity,None)
+                else:
+                    release=INPUT();release.kind=1
+                    release.key=KEYBDINPUT(key.vk,key.scan,key.flags|2,0,INPUT_TAG)
+                    pending[identity]=release
+            elif event.kind==0:
+                # STOOM emits a tagged left click, never other mouse buttons.
+                if event.mouse.flags & 4:pending.pop(('left',),None)
+                elif event.mouse.flags & 2:
+                    release=INPUT();release.kind=0
+                    release.mouse=MOUSEINPUT(0,0,0,4,0,INPUT_TAG)
+                    pending[('left',)]=release
+        return list(reversed(pending.values()))
     def chord(self,*keys):
         def event(vk,up):
             value=INPUT();value.kind=1
@@ -116,19 +153,30 @@ class Windows:
                 current=W.POINT()
                 if saved and self.current() and self.u.GetCursorPos(C.byref(current)) and (current.x,current.y)==point:
                     self._move((original.x,original.y))
+            # Click selection orientation belongs to the host editor.
+            return 'unknown'
         else:
             # Same navigation keys for every application; never Ctrl+A.
             guard();self.chord(CTRL,DOWN);pause(.025)
             guard();self.chord(CTRL,SHIFT,UP);pause(.025)
+            return 'backward'
 
 
 class Driver:
-    def __init__(self,env,lease_factory=clipboard_process.ClipboardLease):
-        self.env=env;self.lease_factory=lease_factory
+    def __init__(self,env,lease_factory=clipboard_process.ClipboardLease,report=None):
+        self.env=env;self.lease_factory=lease_factory;self._report=report
+        self.env.report=self.record
+    def record(self,phase,**details):
+        if self._report is not None:
+            try:self._report(phase,**details)
+            except Exception:pass  # Diagnostics must never affect an edit.
     def guard(self,revision):
         if not self.env.current():
+            self.record('guard_cancelled',cause='focus',revision=revision)
             raise Cancelled('입력창의 포커스가 바뀌어 번역을 취소했습니다.')
-        if self.env.activity()[0]!=revision:
+        current=self.env.activity()[0]
+        if current!=revision:
+            self.record('guard_cancelled',cause=getattr(self.env,'activity_cause',lambda:'unknown')(),revision=revision,current_revision=current)
             raise Cancelled('새 키보드 입력이나 클릭·스크롤이 감지되어 번역을 취소했습니다.')
     def pause(self,seconds,revision):
         end=self.env.now()+seconds
@@ -136,16 +184,22 @@ class Driver:
             self.guard(revision);self.env.sleep(min(.01,max(0,end-self.env.now())))
         self.guard(revision)
     def copy(self,lease,revision,timeout=.16):
+        self.record('copy_started',revision=revision)
         self.guard(revision);lease.arm_copy();self.guard(revision);self.env.chord(CTRL,ord('C'))
         end=self.env.now()+timeout
         while True:
             self.guard(revision)
             try:text=lease.read_copy(self.env.owner_pids)
             except OSError:text=None  # Another process can briefly hold OpenClipboard.
-            if text is not None:return text
-            if self.env.now()>=end:return None
+            if text is not None:
+                self.record('copy_done',source_chars=len(text))
+                return text
+            if self.env.now()>=end:
+                self.record('copy_timeout',cause='clipboard')
+                return None
             self.pause(.01,revision)
     def capture(self,revision,commit_space=False):
+        self.record('capture_started',revision=revision)
         self.guard(revision);self.env.safe()
         end=self.env.now()+.4
         while self.env.modifiers():
@@ -155,7 +209,9 @@ class Driver:
         try:
             text=self.copy(lease,revision)
             automatic=text is None or not text
+            strategy=None
             if automatic:
+                self.record('selection_started')
                 before_space=self.env.anchor()
                 if commit_space and before_space is not None:
                     self.guard(revision);self.env.chord(0x20);self.pause(.025,revision)
@@ -166,7 +222,9 @@ class Driver:
                     if space!=' ':
                         raise KeyboardError('조합 확정용 공백을 확인하지 못했습니다. 입력창을 확인하세요.')
                     self.guard(revision);self.env.chord(0x08);self.pause(.025,revision)
-                self.env.select(lambda:self.guard(revision),lambda s:self.pause(s,revision))
+                strategy=self.env.select(lambda:self.guard(revision),lambda s:self.pause(s,revision))
+                self.record('selection_sent')
+                self.record('selection_backward' if strategy=='backward' else 'selection_direction_unknown')
                 text=self.copy(lease,revision)
             if not text or not text.strip():raise KeyboardError('선택·복사할 글이 없습니다. 글을 선택한 뒤 다시 시도하세요.')
             # Preserve the destination paragraph's existing formatting by
@@ -176,6 +234,18 @@ class Driver:
             if text.endswith(('\r','\n','\u2028','\u2029')):
                 without_break=text.rstrip('\r\n\u2028\u2029')
                 if not without_break.strip():raise KeyboardError('번역할 글이 없습니다.')
+                if automatic and strategy=='backward':
+                    # Ctrl+Shift+Up leaves the active endpoint at the start.
+                    # Collapse there and select forward before trimming the
+                    # trailing paragraph mark. A real recopy must prove the
+                    # same range; unsupported host navigation cannot proceed.
+                    self.record('paragraph_direction_started')
+                    self.guard(revision);self.env.chord(LEFT)
+                    self.guard(revision);self.env.chord(CTRL,SHIFT,DOWN)
+                    self.pause(.025,revision)
+                    if self.copy(lease,revision)!=text:
+                        raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                    self.record('paragraph_direction_confirmed',source_chars=len(text))
                 self.guard(revision);self.env.chord(SHIFT,LEFT);self.pause(.025,revision)
                 shrunk=self.copy(lease,revision)
                 if shrunk!=without_break:
@@ -186,9 +256,13 @@ class Driver:
             # Two actual copies, not a provider's cached range/value.
             if self.copy(lease,revision)!=text:raise Cancelled('복사된 원문이 바뀌어 번역을 취소했습니다.')
             self.guard(revision)
+            self.record('source_confirmed',source_chars=len(text))
             return Snapshot(text,self.env.focus,revision,self.env.anchor(),automatic)
-        finally:lease.restore()
+        finally:
+            lease.restore()
+            self.record('capture_clipboard_restored')
     def apply(self,snapshot,translation):
+        self.record('apply_started',source_chars=len(snapshot.text),output_chars=len(translation) if isinstance(translation,str) else 0)
         revision=snapshot.revision;self.guard(revision);self.env.safe()
         if not isinstance(translation,str) or not translation.strip() or '\0' in translation or len(translation.encode('utf-16-le'))//2>16000:
             raise KeyboardError('번역 결과가 비어 있거나 너무 깁니다.')
@@ -198,6 +272,7 @@ class Driver:
         lease=self.lease_factory()
         try:
             if self.copy(lease,revision)!=snapshot.text:raise Cancelled('선택된 원문이 바뀌어 교체를 취소했습니다.')
+            self.record('apply_source_confirmed',source_chars=len(snapshot.text))
             lease.replace_owned(snapshot.text,translation)
             self.guard(revision)
             if snapshot.anchor is not None and self.env.anchor()!=snapshot.anchor:
@@ -206,10 +281,12 @@ class Driver:
             # until much later, so restoring an image after a fixed delay can
             # paste that image instead. Keep the materialized translation.
             sequence=lease.keep_translation()
+            self.record('translation_clipboard_ready',output_chars=len(translation))
             self.guard(revision)
             if hasattr(self.env,'clipboard_sequence') and self.env.clipboard_sequence()!=sequence:
                 raise Cancelled('클립보드가 바뀌어 교체를 취소했습니다.')
             self.env.chord(CTRL,ord('V'))
+            self.record('paste_sent')
             # Do not paste twice if the target provides no acknowledgement.
             return '키보드 경로 · 번역문 전달 완료'
         finally:lease.restore()
