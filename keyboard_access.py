@@ -40,6 +40,14 @@ class Snapshot:
     selected_automatically: bool
 
 
+def select_paragraph(env,guard,pause):
+    # Common paragraph navigation for no-caret hosts and a click that selected
+    # no usable text. Do not guess with line/paragraph-specific alternatives.
+    guard();env.chord(CTRL,DOWN);pause(.025)
+    guard();env.chord(CTRL,SHIFT,UP);pause(.025)
+    return 'backward'
+
+
 class Windows:
     now=staticmethod(time.monotonic)
     sleep=staticmethod(time.sleep)
@@ -144,6 +152,11 @@ class Windows:
             value=INPUT();value.kind=0;value.mouse=MOUSEINPUT(0,0,0,flag,0,INPUT_TAG);events.append(value)
         self._send(events)
     def select(self,guard,pause):
+        # A caret coordinate can overlap a table/object handle. Default input
+        # must never turn paragraph selection into an object double click.
+        return select_paragraph(self,guard,pause)
+    def select_by_click(self,guard,pause):
+        """Explicit diagnostic helper; the application route never calls it."""
         point=self.caret_point()
         if point:
             original=W.POINT();saved=bool(self.u.GetCursorPos(C.byref(original)))
@@ -151,20 +164,23 @@ class Windows:
             try:
                 for _ in range(3):
                     guard();current=W.POINT()
-                    if not self.u.GetCursorPos(C.byref(current)) or abs(current.x-point[0])>1 or abs(current.y-point[1])>1:
-                        raise Cancelled('마우스 위치가 바뀌어 자동 선택을 취소했습니다.')
+                    if not self.u.GetCursorPos(C.byref(current)) or (current.x,current.y)!=point:
+                        self._move(point)
+                    guard()
                     self.click();pause(.025)
             finally:
+                # Never pull the pointer back after a real click/drag/typing
+                # cancelled the request, or after the user moved it away.
+                restore=True
+                try:guard()
+                except Cancelled:restore=False
                 current=W.POINT()
-                if saved and self.current() and self.u.GetCursorPos(C.byref(current)) and (current.x,current.y)==point:
+                if restore and saved and self.current() and self.u.GetCursorPos(C.byref(current)) and (current.x,current.y)==point:
                     self._move((original.x,original.y))
             # Click selection orientation belongs to the host editor.
             return 'unknown'
         else:
-            # Same navigation keys for every application; never Ctrl+A.
-            guard();self.chord(CTRL,DOWN);pause(.025)
-            guard();self.chord(CTRL,SHIFT,UP);pause(.025)
-            return 'backward'
+            return select_paragraph(self,guard,pause)
 
 
 class Driver:
@@ -232,6 +248,16 @@ class Driver:
                 self.record('selection_sent')
                 self.record('selection_backward' if strategy=='backward' else 'selection_direction_unknown')
                 text=self.copy(lease,revision)
+                if strategy=='unknown' and (not text or not text.strip()):
+                    self.record('selection_keyboard_fallback')
+                    # A copied whitespace range is an actual selection; collapse
+                    # it first. A timeout/empty copy does not prove a selection,
+                    # so Left could otherwise move into a previous paragraph.
+                    if text:
+                        self.guard(revision);self.env.chord(LEFT)
+                    strategy=select_paragraph(self.env,lambda:self.guard(revision),lambda s:self.pause(s,revision))
+                    self.record('selection_backward')
+                    text=self.copy(lease,revision)
             if not text or not text.strip():raise KeyboardError('선택·복사할 글이 없습니다. 글을 선택한 뒤 다시 시도하세요.')
             # Preserve the destination paragraph's existing formatting by
             # leaving a selected trailing paragraph break in the document.

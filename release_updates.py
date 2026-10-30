@@ -19,8 +19,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION='0.6.9'
-BUILD='20261030.4'
+VERSION='0.6.10'
+BUILD='20261030.5'
 REPOSITORY='wansucong-stoom/STOOOM-Shift-Trans'
 API_URL=f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
 MAX_INSTALLER_SIZE=300*1024*1024

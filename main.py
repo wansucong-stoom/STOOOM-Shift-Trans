@@ -340,7 +340,11 @@ class App(QWidget):
   root=QHBoxLayout(self); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
   sidebar=QFrame(); sidebar.setObjectName('sidebar'); sidebar.setFixedWidth(220); side=QVBoxLayout(sidebar); side.setContentsMargins(0,30,0,20); side.setSpacing(0)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'
-  brandrow=QHBoxLayout(); brandrow.setContentsMargins(20,0,12,0); brandicon=QLabel(); brandicon.setPixmap(QIcon(str(icon_path)).pixmap(32,32)); brandrow.addWidget(brandicon); brand=QLabel('STOOM'); brand.setStyleSheet('font-size: 16pt; font-weight: 700; color: #17394c;'); brandrow.addWidget(brand); brandrow.addStretch(); side.addLayout(brandrow)
+  brandrow=QHBoxLayout(); brandrow.setContentsMargins(20,0,12,0)
+  brandicon=QLabel();brandicon.setObjectName('brandLockup');brandicon.setAccessibleName('STOOM SST')
+  lockup=QPixmap(str(icon_path.parent/'branding'/'sst'/'lockup-light-3x.png'));lockup.setDevicePixelRatio(3)
+  brandicon.setPixmap(lockup);brandicon.setFixedSize(158,48)
+  brandrow.addWidget(brandicon);brandrow.addStretch();side.addLayout(brandrow)
   caption=QLabel('     Shift Translator'); caption.setStyleSheet('font-size: 9pt; color: #7b8790;'); side.addWidget(caption); side.addSpacing(34)
   self.stack=QStackedWidget(); self.nav=[]
   for i,name in enumerate(['단축키 설정','언어팩 관리','번역 엔진','업데이트']):
@@ -360,7 +364,7 @@ class App(QWidget):
   row=QHBoxLayout(); row.addWidget(QLabel('원문 언어')); self.source=QComboBox(); self.source.addItems(['자동','한국어','영어','일본어']); row.addWidget(self.source); settings.addLayout(row); settings.addSpacing(15)
   info=QLabel('두 키는 각각 다른 언어로 설정하거나 끌 수 있습니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
   self.input_readiness=QLabel('Windows 입력 지원 확인 중…'); self.input_readiness.setWordWrap(True); self.input_readiness.setStyleSheet('color:#7d8791;'); settings.addWidget(self.input_readiness)
-  packs=page('언어팩 관리','필요한 번역 방향만 선택해 내려받으세요. 번역은 설치 후 오프라인에서 실행됩니다.')
+  packs=page('언어팩 관리','OPUS-MT Big는 방향별 별도 모델입니다. 한국어↔영어는 두 방향을 각각 설치하세요. 설치 후에는 오프라인으로 번역합니다.')
   self.checks={}; self.pack_select={}
   labels={'en_ja':'영어 → 일본어 · Argos','en_ko':'영어 → 한국어 · Argos','ja_en':'일본어 → 영어 · Argos','ko_en':'한국어 → 영어 · Argos',
           'ko_en_opus_big':'한국어 → 영어 · OPUS-MT Big','en_ko_opus_big':'영어 → 한국어 · OPUS-MT Big'}
@@ -370,7 +374,7 @@ class App(QWidget):
    options=QComboBox()
    for spec in model_packs.choices(*pair.split('_')): options.addItem(spec.label,spec.id)
    row.addWidget(options,1); packs.addLayout(row); self.checks[pair]=box; self.pack_select[pair]=options
-  self.status=QLabel('각 방향에서 사용할 모델을 하나 선택하세요. 내려받을 방향은 체크합니다.\nArgos: 약 112~115 MiB · OPUS-MT Big: 약 741 MiB 다운로드 후 변환'); self.status.setStyleSheet('color:#7d8791;'); self.status.setWordWrap(True); packs.addSpacing(8); packs.addWidget(self.status)
+  self.status=QLabel('각 방향에서 사용할 모델을 하나 선택하세요. 내려받을 방향은 체크합니다.\nArgos: 약 112~115 MiB · OPUS-MT Big: 방향당 약 741 MiB 다운로드 후 변환'); self.status.setStyleSheet('color:#7d8791;'); self.status.setWordWrap(True); packs.addSpacing(8); packs.addWidget(self.status)
   self.pack_engine_status=QLabel('번역 엔진 준비 중…');self.pack_engine_status.setStyleSheet('color:#526b79;');self.pack_engine_status.setWordWrap(True);packs.addWidget(self.pack_engine_status)
   self.progress=QProgressBar(); self.progress.setVisible(False); packs.addWidget(self.progress)
   self.progress_time=QLabel(); self.progress_time.setStyleSheet('color:#7d8791;'); self.progress_time.setVisible(False); packs.addWidget(self.progress_time)
@@ -1033,7 +1037,8 @@ if __name__=='__main__':
   sys.exit(0)
  try:
   threading.Thread(target=clipboard_lease.warmup,name='STOOM-clipboard-warmup',daemon=True).start()
-  app=QApplication(sys.argv); app.setQuitOnLastWindowClosed(False); window=App(); window.show(); code=app.exec()
+  app=QApplication(sys.argv);app.setWindowIcon(QIcon(str(Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico')))
+  app.setQuitOnLastWindowClosed(False); window=App(); window.show(); code=app.exec()
  finally:
   clipboard_lease.shutdown()
   singleton.release(handle)

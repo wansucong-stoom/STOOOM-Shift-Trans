@@ -1,0 +1,67 @@
+{
+  "repository": "https://github.com/google/fonts",
+  "revision": "6157dfaa640ca5738b4d1a7070fe389c3036d7fc",
+  "discovered_directory_api": "https://api.github.com/repos/google/fonts/contents/ofl/inter",
+  "upstream_reported_repository": "https://github.com/rsms/inter",
+  "upstream_reported_revision": "66647c0bbbe41a850d79d9c76fb13add3378940f",
+  "license_file": "OFL.txt",
+  "license_identifier_as_supplied": "SIL Open Font License, Version 1.1",
+  "files": {
+    "Inter[opsz,wght].ttf": {
+      "bytes": 876576,
+      "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+      "git_blob_sha1": "047c92f6e2212473dc436020afed689527076d44",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/6157dfaa640ca5738b4d1a7070fe389c3036d7fc/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf"
+    },
+    "OFL.txt": {
+      "bytes": 4377,
+      "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+      "git_blob_sha1": "21f6aff961064c2e429f570995e446bcdd555422",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/6157dfaa640ca5738b4d1a7070fe389c3036d7fc/ofl/inter/OFL.txt"
+    },
+    "METADATA.pb": {
+      "bytes": 1342,
+      "sha256": "79e4721ef4f72251c6080a40dfd9efb6728b4df1fc690f0c70eb4b1b5303a5b0",
+      "git_blob_sha1": "2b68e433ea1923f86fa295977274a84e878d65ec",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/6157dfaa640ca5738b4d1a7070fe389c3036d7fc/ofl/inter/METADATA.pb"
+    }
+  },
+  "ttf_axes": [
+    {
+      "tag": "opsz",
+      "min": 14.0,
+      "default": 14.0,
+      "max": 32.0,
+      "flags": 0,
+      "name_id": 256
+    },
+    {
+      "tag": "wght",
+      "min": 100.0,
+      "default": 400.0,
+      "max": 900.0,
+      "flags": 0,
+      "name_id": 257
+    }
+  ],
+  "ttf_names": {
+    "1": [
+      "Inter"
+    ],
+    "2": [
+      "Regular"
+    ],
+    "4": [
+      "Inter Regular"
+    ],
+    "5": [
+      "Version 4.001;git-66647c0bb"
+    ],
+    "6": [
+      "Inter-Regular"
+    ]
+  },
+  "global_installation": false,
+  "font_bytes_modified": false,
+  "scope": "workspace font directory only"
+}

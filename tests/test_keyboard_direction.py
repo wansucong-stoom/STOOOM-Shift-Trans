@@ -155,7 +155,8 @@ class UnknownClick(Editor):
 e=UnknownClick(original,len(prefix)+5);refused(e)
 assert e.selected==1 and (k.LEFT,) not in e.events and (k.CTRL,k.SHIFT,k.DOWN) not in e.events
 
-# Exercise Windows.select's actual click return value with a simulated cursor.
+# Exercise only the explicit diagnostic click helper with a simulated cursor.
+# Default Windows.select is keyboard-only, regardless of a valid caret point.
 class Cursor:
     def __init__(self):self.position=(2,3)
     def GetCursorPos(self,pointer):
@@ -163,7 +164,21 @@ class Cursor:
 cursor=Cursor();clicks=[]
 mouse=NS(caret_point=lambda:(10,20),u=cursor,current=lambda:True,
          _move=lambda point:setattr(cursor,'position',point),click=lambda:clicks.append(1))
-assert k.Windows.select(mouse,lambda:None,lambda seconds:None)=='unknown'
+assert k.Windows.select_by_click(mouse,lambda:None,lambda seconds:None)=='unknown'
 assert len(clicks)==3 and cursor.position==(2,3)
 
-print('Paragraph direction: automatic backward/forward recopy, start/middle/end, final delimiters, refusal, user/multiple paragraphs and unknown click orientation: PASS')
+# A valid Windows caret may overlap a table/object property handle. The default
+# full capture-and-paste path must never query a mouse position/object target,
+# move the pointer or click there, even though the caret coordinate is available.
+def forbidden_mouse(*args,**kwargs):raise AssertionError('Default route used mouse selection')
+e=Editor(original,len(prefix)+len(paragraph));caret_queries=[]
+e.caret_point=lambda:caret_queries.append(1) or (400,300)
+e.u=NS(GetCursorPos=forbidden_mouse,WindowFromPoint=forbidden_mouse)
+e._move=forbidden_mouse;e.click=forbidden_mouse
+driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+assert snapshot.text==paragraph and not caret_queries
+assert (k.CTRL,k.DOWN) in e.events and (k.CTRL,k.SHIFT,k.UP) in e.events
+driver.apply(snapshot,'Keyboard-only translation.')
+assert e.text==prefix+'Keyboard-only translation.'+suffix and e.pasted==1
+
+print('Paragraph direction: keyboard-only default with valid table-object caret, backward/forward recopy, boundaries/refusal, user selections and diagnostic click orientation: PASS')

@@ -16,7 +16,7 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 .venv\Scripts\python.exe tests\run_tests.py
 if errorlevel 1 exit /b 1
-.venv\Scripts\python.exe -m PyInstaller --clean --noconfirm --onedir --windowed --version-file version_info.txt --icon stoom.ico --add-data "stoom.ico;." --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
+.venv\Scripts\python.exe -m PyInstaller --clean --noconfirm --onedir --windowed --version-file version_info.txt --icon stoom.ico --add-data "stoom.ico;." --add-data "branding/sst/lockup-light-3x.png;branding/sst" --add-data "branding/sst/stoom.ico;branding/sst" --add-data "branding/OFL-Inter.txt;branding" --name STOOMShiftTranslator --exclude-module spacy --exclude-module stanza --exclude-module torch --exclude-module argostranslate main.py
 if errorlevel 1 exit /b 1
 where ISCC.exe >nul 2>nul
 if errorlevel 1 (
@@ -29,10 +29,10 @@ if errorlevel 1 (
   set "ISCC=ISCC.exe"
 )
 rem Each changed native build needs its own immutable installation directory.
-if not defined STOOM_NATIVE_VERSION set "STOOM_NATIVE_VERSION=0.6.3-20261029.4"
+if not defined STOOM_NATIVE_VERSION set "STOOM_NATIVE_VERSION=0.6.10-20261030.5"
 "%ISCC%" "/DNativeBuildRoot=%~dp0native_tsf\build" "/DComponentVersion=%STOOM_NATIVE_VERSION%" native_tsf\installer.iss
 if errorlevel 1 exit /b 1
 "%ISCC%" "/DTsfSetup=%~dp0native_tsf\dist\STOOM-TextService-%STOOM_NATIVE_VERSION%-setup.exe" installer.iss
 if errorlevel 1 exit /b 1
-echo Build complete: dist\STOOM-Translator-v069-TSF-setup.exe
+echo Build complete: dist\STOOM-Translator-v0610-TSF-setup.exe
 pause

@@ -1,0 +1,7 @@
+@font-face{font-family:STOOM Inter;src:url('./Inter-variable.ttf') format('truetype');font-weight:100 900;font-style:normal;font-display:block}
+.stoom-product-mark{box-sizing:border-box;display:inline-grid;place-items:center;width:29px;height:29px;position:relative;flex:0 0 29px;font-family:"STOOM Inter",Inter,sans-serif;font-size:10.5px;font-weight:850;font-variation-settings:"wght" 850,"opsz" 14;font-optical-sizing:none;line-height:1;letter-spacing:0;color:#e3faff}
+.stoom-product-mark.stoom-mark{box-sizing:border-box}
+.stoom-product-code{position:absolute;inset:0;transform:translateY(2.5px);display:grid;place-items:center;font:inherit;letter-spacing:0}
+.stoom-brand-lockup{display:flex;align-items:center;gap:10px}
+.stoom-brand-lockup>img{width:48px;height:48px;flex:0 0 48px}
+.stoom-brand-word{font-family:"STOOM Inter",Inter,sans-serif;font-size:20px;font-weight:850;font-variation-settings:"wght" 850,"opsz" 14;font-optical-sizing:none;letter-spacing:.11em;line-height:1}
