@@ -37,6 +37,26 @@ def acquire():
         return None
     return handle
 
+def acquire_when_available(timeout=15.0, interval=.05):
+    """Wait briefly for a retiring instance, without activating or killing it.
+
+    Intended only for an explicitly requested post-update restart. Ordinary
+    launches keep acquire()'s immediate duplicate-instance behavior. Each
+    unsuccessful acquire closes its temporary handle before the next attempt.
+    """
+    if interval <= 0:
+        raise ValueError('The singleton retry interval must be positive.')
+    deadline = time.monotonic() + max(0, timeout)
+    while True:
+        handle = acquire()
+        if handle:
+            return handle
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        time.sleep(min(interval, remaining))
+
+
 def release(handle):
     if handle:
         kernel.CloseHandle(handle)

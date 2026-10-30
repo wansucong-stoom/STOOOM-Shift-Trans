@@ -17,6 +17,7 @@ import tsf_bridge
 import update_control
 import release_updates
 import keyboard_access
+import caret_locator
 import input_diagnostics
 import windows_identity
 import native_decode
@@ -362,7 +363,8 @@ class App(QWidget):
    row=QHBoxLayout(); label=QLabel(name); label.setMinimumWidth(190); row.addWidget(label); box=QComboBox(); box.addItems(['사용 안 함','한국어','영어','일본어']); row.addWidget(box); settings.addLayout(row); self.target[key]=box
   self.target['shift'].setCurrentText('영어')
   row=QHBoxLayout(); row.addWidget(QLabel('원문 언어')); self.source=QComboBox(); self.source.addItems(['자동','한국어','영어','일본어']); row.addWidget(self.source); settings.addLayout(row); settings.addSpacing(15)
-  info=QLabel('선택한 글을 번역합니다. 선택이 없으면 현재 커서부터 줄 시작까지만 번역합니다.\n두 키는 각각 다른 언어로 설정하거나 끌 수 있습니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
+  row=QHBoxLayout(); row.addWidget(QLabel('자동 선택')); self.selection_mode=QComboBox();self.selection_mode.addItem('커서 위치 세 번 클릭','triple_click');self.selection_mode.addItem('현재 줄 · Shift+Home','current_line');row.addWidget(self.selection_mode);settings.addLayout(row)
+  info=QLabel('직접 선택한 글을 우선 번역합니다. 선택이 없으면 지정한 방식으로 선택합니다.\n세 번 클릭의 선택 범위는 입력창에 따라 다릅니다. Shift+Home은 커서부터 줄 시작까지 선택합니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
   self.input_readiness=QLabel('Windows 입력 지원 확인 중…'); self.input_readiness.setWordWrap(True); self.input_readiness.setStyleSheet('color:#7d8791;'); settings.addWidget(self.input_readiness)
   packs=page('언어팩 관리','OPUS-MT Big는 방향별 별도 모델입니다. 한국어↔영어는 두 방향을 각각 설치하세요. 설치 후에는 오프라인으로 번역합니다.')
   self.checks={}; self.pack_select={}
@@ -414,6 +416,7 @@ class App(QWidget):
    box.currentIndexChanged.connect(lambda _,p=pair:self.sync_model_choice(p,False))
   for box in list(self.target.values())+[self.source,self.engine]: box.currentTextChanged.connect(self.config_changed)
   for box in self.model_choices.values():box.currentIndexChanged.connect(self.config_changed)
+  self.selection_mode.currentIndexChanged.connect(self.save)
   icon_path=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'stoom.ico'; icon=QIcon(str(icon_path)); self.setWindowIcon(icon)
   self.tray=QSystemTrayIcon(icon,self); menu=QMenu(); self.menu=menu; menu.addAction('설정',self.show_settings);menu.addAction('업데이트 확인',self.show_update_page); menu.addAction('종료',self.quit); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.show_settings() if reason in (QSystemTrayIcon.ActivationReason.Trigger,QSystemTrayIcon.ActivationReason.DoubleClick) else None); self.tray.show()
   self.tray.setToolTip(f'STOOM Shift Translator {release_updates.VERSION} ({release_updates.BUILD})')
@@ -423,6 +426,7 @@ class App(QWidget):
   self.select_page(0); self.tap=Tap(self.bridge); self.tap.listener.start()
   if hasattr(self.tap,'mouse_listener'):self.tap.mouse_listener.start()
   QTimer.singleShot(0,self.begin_engine_preflight)
+  caret_locator.warmup()
   threading.Thread(target=lambda:self.bridge.tsf_status.emit(tsf_bridge.activate_installed()),daemon=True).start()
   self._release_start_timer=QTimer(self);self._release_start_timer.setSingleShot(True);self._release_start_timer.timeout.connect(lambda:self.check_release(False));self._release_start_timer.start(15000)
   self._release_timer=QTimer(self);self._release_timer.setInterval(6*60*60*1000);self._release_timer.timeout.connect(lambda:self.check_release(False));self._release_timer.start()
@@ -524,7 +528,7 @@ class App(QWidget):
    if event['error']:
     self._release_installing=False;self.check_updates.setEnabled(True);self.auto_install_updates.setEnabled(True);self.release_check_button.setEnabled(True);self.release_install_button.setEnabled(True);self.release_status.setText('업데이트 설치를 시작하지 못했습니다: '+event['error'])
    elif event.get('package_kind')=='msi':
-    self.release_status.setText('MSI 업데이트를 위해 번역기를 종료합니다. 설치 후 새 버전을 실행하세요.')
+    self.release_status.setText('업데이트를 위해 번역기를 종료합니다. 설치가 완료되면 새 버전이 자동 실행됩니다.')
     self.quit()
    else:self.release_status.setText('설치 프로그램을 실행했습니다. 업데이트 요청을 기다리고 있습니다.')
   elif kind=='installer_exited':
@@ -601,6 +605,7 @@ class App(QWidget):
    self._saved_settings=d.copy()
    for k in self.target: self.target[k].setCurrentText(d.get(k,self.target[k].currentText()))
    self.source.setCurrentText(d.get('source','자동')); self.external_path=d.get('external_path',''); self.engine.setCurrentText(d.get('engine','기본 오프라인 엔진'))
+   selection_index=self.selection_mode.findData(d.get('selection_mode','triple_click'));self.selection_mode.setCurrentIndex(selection_index if selection_index>=0 else 0)
    for pair,box in self.model_choices.items():
     models=d.get('models',{});models=models if isinstance(models,dict) else {}
     index=box.findData(models.get(pair,default_model(pair)))
@@ -609,7 +614,7 @@ class App(QWidget):
    self._release_notified=d.get('notified_release','') if isinstance(d.get('notified_release',''),str) else ''
   except (OSError,ValueError): pass
  def save(self,*args):
-  settings={**getattr(self,'_saved_settings',{}),**{k:v.currentText() for k,v in self.target.items()},'source':self.source.currentText(),'engine':self.engine.currentText(),'external_path':self.external_path,'models':{pair:box.currentData() for pair,box in self.model_choices.items()}}
+  settings={**getattr(self,'_saved_settings',{}),**{k:v.currentText() for k,v in self.target.items()},'source':self.source.currentText(),'engine':self.engine.currentText(),'external_path':self.external_path,'models':{pair:box.currentData() for pair,box in self.model_choices.items()},'selection_mode':self.selection_mode.currentData()}
   if hasattr(self,'check_updates'):settings.update(check_updates=self.check_updates.isChecked(),auto_install_updates=self.auto_install_updates.isChecked(),notified_release=self._release_notified)
   temporary=APP/'settings.json.tmp';temporary.write_text(json.dumps(settings,ensure_ascii=False),encoding='utf-8');temporary.replace(APP/'settings.json');self._saved_settings=settings
  def update_variants(self):
@@ -709,7 +714,7 @@ class App(QWidget):
  def begin_keyboard_capture(self,key,revision,started,focus):
   if getattr(self,'_input_active_job',None) is None:
    self._input_job_counter=getattr(self,'_input_job_counter',0)+1;self._input_active_job=self._input_job_counter
-  request={'key':key,'revision':revision,'focus':focus,'configuration':self.engine_configuration(),'job':self._input_active_job,'started':started}
+  request={'key':key,'revision':revision,'focus':focus,'configuration':self.engine_configuration(),'job':self._input_active_job,'started':started,'selection_mode':self.selection_mode.currentData()}
   self._keyboard_request=request;self.busy=True
   _input_record(self,'capture.requested',job=request['job'],revision=revision,focus=focus)
   self._keyboard_workers=getattr(self,'_keyboard_workers',0)+1
@@ -719,7 +724,8 @@ class App(QWidget):
    try:
     activity=lambda:(-1,0.0) if self._quitting or getattr(self,'_quit_requested',False) or self._keyboard_request is not request else self.tap.activity_snapshot()
     env=keyboard_access.Windows(focus,activity,keyboard_safety)
-    if env is not None:env.activity_cause=lambda:_input_activity_cause(self)
+    if env is not None:
+     env.selection_mode=request['selection_mode'];env.activity_cause=lambda:_input_activity_cause(self)
     report=lambda phase,**details:_input_record(self,phase,job=request['job'],**details)
     driver=keyboard_access.Driver(env,report=report)
     # Selection/navigation can commit composition without modifying the text.
@@ -1043,7 +1049,7 @@ if __name__=='__main__':
  if update_control.installation_active():
   ctypes.windll.user32.MessageBoxW(None,'업데이트 중입니다. 설치 완료 후 실행하세요.','STOOM Shift Translator',0x40)
   sys.exit(0)
- handle=singleton.acquire()
+ handle=singleton.acquire_when_available() if '--after-update' in sys.argv else singleton.acquire()
  if not handle:
   if not singleton.show_existing():
    ctypes.windll.user32.MessageBoxW(None,'STOOM 번역기가 이미 실행 중이지만 설정 창을 찾지 못했습니다. 잠시 후 다시 시도하세요.','STOOM Shift Translator',0x40)

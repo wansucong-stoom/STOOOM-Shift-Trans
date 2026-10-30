@@ -52,6 +52,7 @@ def app():
     a._keyboard_request=None;a._pending_input=None;a._startup_wait_notified=False
     a.tap=NS(activity_snapshot=lambda:(revision[0],0.0),activity_cause=lambda:'typing')
     a.target={'shift':NS(currentText=lambda:'영어')};a.source=NS(currentText=lambda:'한국어')
+    a.selection_mode=NS(currentData=lambda:'triple_click')
     a.engine=NS(currentText=lambda:'기본 오프라인 엔진');a.external_path=''
     a.bridge=NS(keyboard_captured=Signal(),keyboard_applied=Signal(),done=Signal(),error=Signal())
     a.isActiveWindow=lambda:False;a.engine_configuration=lambda:configuration[0]

@@ -22,6 +22,7 @@ class App:
         self._quitting=False;self.busy=False;self.engine_initializing=False
         self._keyboard_request=None;self._pending_input=None
         self.target={'shift':types.SimpleNamespace(currentText=lambda:'영어')}
+        self.selection_mode=types.SimpleNamespace(currentData=lambda:'triple_click')
         self.tap=types.SimpleNamespace(activity_snapshot=lambda:(7,0.0))
         self.bridge=types.SimpleNamespace(keyboard_captured=Signal(),keyboard_applied=Signal())
         self.input_readiness=types.SimpleNamespace(setText=lambda text:None)
