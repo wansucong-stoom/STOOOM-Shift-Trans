@@ -160,9 +160,14 @@ for key,label in PRODUCTS.items():
             assert not any((a[0].any(),a[-1].any(),a[:,0].any(),a[:,-1].any())), 'transparent glow clipped'
     # Common Inno image framing; artwork retains the same master geometry.
     for width,height,name,marksize in ((164,314,'installer.bmp',112),(55,55,'installer-small.bmp',48)):
-        im=QImage(width,height,QImage.Format.Format_RGB32);im.fill(QColor(BG))
+        im=QImage(width,height,QImage.Format.Format_RGB32);im.fill(QColor('#ffffff' if height == 55 else BG))
         p=QPainter(im);p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        mark=image(label,marksize);p.drawImage((width-marksize)//2,28 if height>100 else (height-marksize)//2,mark)
+        mark=image(label,marksize)
+        if height == 55:
+            clip=QPainterPath();clip.addRoundedRect(QRectF((width-marksize)//2,(height-marksize)//2,marksize,marksize),10,10)
+            p.setClipPath(clip)
+        p.drawImage((width-marksize)//2,28 if height>100 else (height-marksize)//2,mark)
+        p.setClipping(False)
         if height>100:
             p.setPen(QColor(INK));p.setFont(font(20));p.drawText(QRectF(0,155,width,30),Qt.AlignmentFlag.AlignCenter,'STOOM')
             p.setFont(font(12));p.setPen(QColor('#8299ad'));p.drawText(QRectF(0,188,width,28),Qt.AlignmentFlag.AlignCenter,label or 'STOOM')

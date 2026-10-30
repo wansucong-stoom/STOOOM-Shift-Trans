@@ -40,6 +40,10 @@ class Cell:
     def down(self,position):
         end=self.text.find('\n',position)
         return len(self.text) if end<0 else end+1
+    def previous(self,position):
+        return max(0,position-(2 if self.text[max(0,position-2):position]=='\r\n' else 1))
+    def following(self,position):
+        return min(len(self.text),position+(2 if self.text[position:position+2]=='\r\n' else 1))
     def select(self,guard,pause):
         guard();self.selected+=1;self.just_clicked=True
         if self.click=='whitespace':self.anchor_pos,self.active=self.end,self.end+2
@@ -54,13 +58,17 @@ class Cell:
             if self.just_clicked and self.click=='empty':self.lease.text=''
             self.just_clicked=False;self.copy_values.append(self.lease.text)
         elif keys==(k.LEFT,):
-            start,end=self.bounds();self.active=start if start!=end else max(0,self.active-1)
+            start,end=self.bounds();self.active=start if start!=end else self.previous(self.active)
+            self.anchor_pos=self.active
+        elif keys==(k.RIGHT,):
+            start,end=self.bounds();self.active=end if start!=end else self.following(self.active)
             self.anchor_pos=self.active
         elif keys==(k.CTRL,k.DOWN):self.active=self.down(self.active);self.anchor_pos=self.active
         elif keys==(k.CTRL,k.SHIFT,k.UP):self.active=self.text.rfind('\n',0,max(0,self.active-1))+1
         elif keys==(k.CTRL,k.SHIFT,k.DOWN):self.active=self.down(self.active)
         elif keys==(k.SHIFT,k.LEFT):
-            self.active-=2 if self.text[max(0,self.active-2):self.active]=='\r\n' else 1
+            self.active=self.previous(self.active)
+        elif keys==(k.SHIFT,k.RIGHT):self.active=self.following(self.active)
         elif keys==(k.CTRL,ord('V')):
             start,end=self.bounds();replacement=self.lease.text
             self.text=self.text[:start]+replacement+self.text[end:]
@@ -70,7 +78,7 @@ class Cell:
 
 
 # The observed two-character CRLF click selection at the last cell sentence is
-# collapsed before common navigation, then fully recopied/direction-normalized.
+# collapsed before common navigation, then recopied and endpoint-probed.
 e=Cell('The last sentence in this cell.');original=e.text;reports=[]
 driver=k.Driver(e,e.factory,report=lambda phase,**fields:reports.append((phase,fields)))
 snapshot=driver.capture(7)

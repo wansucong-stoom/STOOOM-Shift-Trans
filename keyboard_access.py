@@ -264,24 +264,37 @@ class Driver:
             # A selected edge moves differently in some editors: only proceed
             # if an actual second copy proves exactly the intended shrink.
             if text.endswith(('\r','\n','\u2028','\u2029')):
-                without_break=text.rstrip('\r\n\u2028\u2029')
+                without_break=text[:-2] if text.endswith('\r\n') else text[:-1]
                 if not without_break.strip():raise KeyboardError('번역할 글이 없습니다.')
-                if automatic and strategy=='backward':
-                    # Ctrl+Shift+Up leaves the active endpoint at the start.
-                    # Collapse there and select forward before trimming the
-                    # trailing paragraph mark. A real recopy must prove the
-                    # same range; unsupported host navigation cannot proceed.
-                    self.record('paragraph_direction_started')
-                    self.guard(revision);self.env.chord(LEFT)
-                    self.guard(revision);self.env.chord(CTRL,SHIFT,DOWN)
-                    self.pause(.025,revision)
-                    if self.copy(lease,revision)!=text:
-                        raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
-                    self.record('paragraph_direction_confirmed',source_chars=len(text))
+                # Hosts can expose a forward block even after Ctrl+Shift+Up.
+                # Try the working manual-selection path before assuming which
+                # endpoint is active. Never collapse/reselect using Down: logs
+                # showed a complete paragraph becoming only its delimiter.
+                self.record('paragraph_trim_started')
                 self.guard(revision);self.env.chord(SHIFT,LEFT);self.pause(.025,revision)
                 shrunk=self.copy(lease,revision)
                 if shrunk!=without_break:
-                    raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                    # Reverse only a probe that actually changed the selection.
+                    # At document start Shift+Left can be a no-op.
+                    if shrunk!=text:
+                        self.guard(revision);self.env.chord(SHIFT,RIGHT);self.pause(.025,revision)
+                        if self.copy(lease,revision)!=text:
+                            self.record('paragraph_restore_failed')
+                            raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                    if not (automatic and strategy=='backward'):
+                        raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                    self.record('paragraph_end_reselect_started')
+                    # Collapse to the copied end, step over exactly one
+                    # boundary (CRLF is one caret step), and select backward.
+                    # A synthetic clipboard newline or unexpected key behavior
+                    # cannot silently drop a character: recopy must match.
+                    for keys in ((RIGHT,),(LEFT,),(CTRL,SHIFT,UP)):
+                        self.guard(revision);self.env.chord(*keys);self.pause(.025,revision)
+                    shrunk=self.copy(lease,revision)
+                    if shrunk!=without_break:
+                        self.record('paragraph_end_reselect_failed',source_chars=len(shrunk) if shrunk is not None else 0)
+                        raise KeyboardError('문단 경계를 확인하지 못했습니다. 글자만 직접 선택하고 다시 시도하세요.')
+                self.record('paragraph_trim_confirmed',source_chars=len(shrunk))
                 text=shrunk
             if len(text.encode('utf-16-le'))//2>MAX_SOURCE or '\0' in text or '\ufffc' in text:
                 raise KeyboardError('선택한 텍스트가 너무 길거나 텍스트 이외의 개체가 포함되어 있습니다.')

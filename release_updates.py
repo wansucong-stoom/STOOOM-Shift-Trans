@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -19,8 +20,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION='0.6.10'
-BUILD='20261030.5'
+VERSION='0.6.11'
+BUILD='20261030.7'
 REPOSITORY='wansucong-stoom/STOOOM-Shift-Trans'
 API_URL=f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
 MAX_INSTALLER_SIZE=300*1024*1024
@@ -51,6 +52,21 @@ class Release:
     download_url:str
     size:int
     sha256:str
+
+
+def installed_package_kind():
+    # _MEIPASS and cwd are resources/working directories, not installation roots.
+    # Treat a present marker conservatively: an MSI install must never launch EXE.
+    if getattr(sys,'frozen',False) and (Path(sys.executable).resolve().parent/'msi-install.json').is_file():
+        return 'msi'
+    return 'exe'
+
+
+def _installer_names(version,kind=None):
+    parts=_version(version)
+    extension=kind or installed_package_kind()
+    return {f'STOOM-Translator-v{"".join(str(p) for p in parts)}-TSF-setup.{extension}',
+            f'STOOM-Translator-v{version}-TSF-setup.{extension}'}
 
 
 def _version(value,tag=False):
@@ -89,8 +105,7 @@ def _validate_release(release):
     parts=_version(release.version)
     if _version(release.tag,True)!=parts or release.tag!='v'+release.version:
         raise UpdateError('업데이트 태그와 버전이 일치하지 않습니다.')
-    expected={f'STOOM-Translator-v{"".join(str(p) for p in parts)}-TSF-setup.exe',
-              f'STOOM-Translator-v{release.version}-TSF-setup.exe'}
+    expected=_installer_names(release.version)
     if release.asset_name not in expected:raise UpdateError('해당 버전의 공식 설치 파일 이름과 일치하지 않습니다.')
     if release.url!=f'https://github.com/{REPOSITORY}/releases/tag/{release.tag}':
         raise UpdateError('공식 저장소의 릴리스 페이지가 아닙니다.')
@@ -168,11 +183,11 @@ def check_latest(current_version=VERSION):
     version='.'.join(str(part) for part in parts);tag='v'+version
     page=f'https://github.com/{REPOSITORY}/releases/tag/{tag}'
     if data.get('html_url')!=page:raise UpdateError('공식 저장소의 릴리스 페이지와 일치하지 않습니다.')
-    expected={f'STOOM-Translator-v{"".join(str(p) for p in parts)}-TSF-setup.exe',f'STOOM-Translator-v{version}-TSF-setup.exe'}
+    expected=_installer_names(version)
     assets=data.get('assets')
     if not isinstance(assets,list):raise NoInstaller(version,page,'설치 파일 목록이 없습니다.')
     matches=[asset for asset in assets if isinstance(asset,dict) and isinstance(asset.get('name'),str) and asset['name'] in expected]
-    if len(matches)!=1:raise NoInstaller(version,page,'일치하는 설치 파일이 없거나 여러 개입니다.')
+    if len(matches)!=1:raise NoInstaller(version,page,f'현재 설치 방식({installed_package_kind().upper()})에 맞는 설치 파일이 없거나 여러 개입니다.')
     asset=matches[0]
     if asset.get('state')!='uploaded':raise NoInstaller(version,page,'설치 파일 업로드가 완료되지 않았습니다.')
     digest=asset.get('digest')
@@ -191,7 +206,8 @@ def _verify_stream(stream,release):
     while True:
         chunk=stream.read(CHUNK_SIZE)
         if not chunk:break
-        if first and not chunk.startswith(b'MZ'):raise UpdateError('다운로드한 파일이 Windows 설치 실행 파일이 아닙니다.')
+        signature=b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1' if release.asset_name.endswith('.msi') else b'MZ'
+        if first and not chunk.startswith(signature):raise UpdateError('다운로드한 파일이 해당 Windows 설치 형식이 아닙니다.')
         first=False;total+=len(chunk)
         if total>release.size:raise UpdateError('설치 파일 크기 검증에 실패했습니다.')
         digest.update(chunk)
@@ -213,7 +229,7 @@ def download_verified(release,cache_dir,progress=None):
     try:
         cache=Path(cache_dir).resolve();cache.mkdir(parents=True,exist_ok=True)
     except OSError as error:raise UpdateError('업데이트 파일을 저장할 폴더를 만들지 못했습니다.') from error
-    path=cache/f'stoom-update-{release.version}-{release.sha256[:16]}.exe'
+    path=cache/f'stoom-update-{release.version}-{release.sha256[:16]}{Path(release.asset_name).suffix}'
     with _registry_lock:_verified.pop(path,None)
     if path.is_symlink():raise UpdateError('업데이트 캐시의 파일 경로가 올바르지 않습니다.')
     try:
@@ -280,6 +296,37 @@ def launch_installer(path):
         _validate_release(release)
         with _locked_reader(candidate) as stream:
             _verify_stream(stream,release)
+            if release.asset_name.endswith('.msi'):
+                return _launch_msi(candidate,stream)
             return subprocess.Popen([str(candidate),'/STOOMUPDATE=1','/SP-','/SILENT','/NORESTART'],
                                     creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),close_fds=True)
     except OSError as error:raise UpdateError('검증한 업데이트 설치 파일을 실행하지 못했습니다.') from error
+
+
+def _system_msiexec():
+    # Read the real system directory from Windows, never PATH/SystemRoot env.
+    import ctypes as C
+    kernel=C.WinDLL('kernel32',use_last_error=True)
+    function=kernel.GetSystemDirectoryW
+    function.argtypes=[C.c_wchar_p,C.c_uint];function.restype=C.c_uint
+    buffer=C.create_unicode_buffer(32768)
+    length=function(buffer,len(buffer))
+    if not 0<length<len(buffer):raise C.WinError(C.get_last_error())
+    return str(Path(buffer.value)/'msiexec.exe')
+
+
+def _launch_msi(candidate,stream):
+    # Unlike an EXE, msiexec opens its package after CreateProcess returns.
+    # Inherit the deny-write/delete handle so it stays locked even when the
+    # idle translator quits; the msiexec client holds it until install exits.
+    import msvcrt
+    handle=msvcrt.get_osfhandle(stream.fileno())
+    startup=subprocess.STARTUPINFO()
+    startup.lpAttributeList={'handle_list':[handle]}
+    os.set_handle_inheritable(handle,True)
+    try:
+        return subprocess.Popen([_system_msiexec(),'/i',str(candidate),'/passive','/norestart'],
+                                startupinfo=startup,close_fds=True,
+                                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    finally:
+        os.set_handle_inheritable(handle,False)

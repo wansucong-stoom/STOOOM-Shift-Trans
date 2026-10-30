@@ -219,6 +219,14 @@ with tempfile.TemporaryDirectory() as directory:
         spin_until(lambda:not w._release_download_inflight)
         assert w._release_ready is None and 'SHA-256 mismatch' in w.release_status.text()
 
+    # MSI does not use the EXE installer's cooperative shutdown event. A
+    # successful launch must release loaded files, but failure must keep UI.
+    with mock.patch.object(w,'quit') as shutdown:
+        w.release_event({'kind':'launched','package_kind':'msi','error':'test failure'})
+        shutdown.assert_not_called()
+        w.release_event({'kind':'launched','package_kind':'msi','error':''})
+        shutdown.assert_called_once()
+
     # Late worker completion after shutdown must not restart any work.
     w._quitting=True
     with mock.patch.object(main.release_updates,'check_latest',side_effect=AssertionError('check after quit')),mock.patch.object(main.release_updates,'launch_installer',side_effect=AssertionError('launch after quit')):
