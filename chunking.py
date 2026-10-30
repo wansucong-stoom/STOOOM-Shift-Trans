@@ -2,9 +2,9 @@
 import re
 
 def chunks(text, tokenizer, limit=96):
- for part in re.split(r'(\r\n|\r|\n)',text):
+ for part in re.split(r'(\r\n|[\r\n\v\f\x85\u2028\u2029])',text):
   if not part: continue
-  if part in ('\r\n','\r','\n'):
+  if part in ('\r\n','\r','\n','\v','\f','\x85','\u2028','\u2029'):
    yield False,part
    continue
   remaining=part

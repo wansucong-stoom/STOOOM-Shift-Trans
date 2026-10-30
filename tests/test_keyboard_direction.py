@@ -88,6 +88,20 @@ class Editor:
         if self.after_chord:self.after_chord(self,keys)
 
 
+class AdvancingRight(Editor):
+    """Observed HWP-like endpoint behavior, without native editor calls.
+
+    Right on a nonempty selection collapses to the end and advances one caret
+    position. The diagnostic's subsequent Shift+Left therefore copies a real
+    character rather than the selected paragraph delimiter.
+    """
+    def chord(self,*keys):
+        start,end=self.bounds()
+        super().chord(*keys)
+        if keys==(k.RIGHT,) and start!=end:
+            self.active=self.anchor_pos=self.following(end)
+
+
 def refused(editor):
     original=editor.text
     try:k.Driver(editor,editor.factory).capture(7)
@@ -104,7 +118,7 @@ for offset in (0,len(paragraph)//2,len(paragraph)):
     snapshot=driver.capture(7)
     assert snapshot.text==paragraph and snapshot.selected_automatically
     assert e.text==original and e.anchor_pos>e.active
-    assert (k.RIGHT,) in e.events and (k.CTRL,k.SHIFT,k.DOWN) not in e.events
+    assert e.events.count((k.RIGHT,))==1 and (k.CTRL,k.SHIFT,k.DOWN) not in e.events
     # The failed endpoint probe extends backward; restore its exact source
     # before collapsing to the end and selecting without the paragraph mark.
     assert e.copy_values==[None,paragraph+'\n','\n'+paragraph+'\n',paragraph+'\n',paragraph,paragraph]
@@ -136,6 +150,75 @@ for offset in (0,len(paragraph)//2,len(paragraph)):
     assert e.copy_values==[None,paragraph+'\r\n','\r\n'+paragraph+'\r\n',paragraph+'\r\n',paragraph,paragraph]
     driver.apply(snapshot,'CRLF translation.')
     assert e.text==crlf_prefix+'CRLF translation.'+crlf_suffix
+
+# Reproduce the 2026-10-30 user diagnostic, including the CRLF counts. The
+# first reselection returns exactly the old block; the bounded second candidate
+# must exclude its delimiter while preserving both adjacent paragraphs.
+probe_text='문단 선택을 시험합니다.'
+probe_prefix='앞 문단입니다.\r\n';probe_suffix='\r\n뒤 문단입니다.'
+e=AdvancingRight(probe_prefix+probe_text+probe_suffix,len(probe_prefix)+4)
+driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+assert snapshot.text==probe_text and snapshot.selected_automatically
+baseline=probe_text+'\r\n'
+assert e.copy_values==[None,baseline,'\r\n'+baseline,baseline,baseline,probe_text,probe_text]
+assert [len(value) if value is not None else None for value in e.copy_values]==[None,15,17,15,15,13,13]
+assert e.events.count((k.RIGHT,))==2
+assert e.events.count((k.CTRL,k.SHIFT,k.UP))==3
+assert e.clock<.6
+driver.apply(snapshot,'Paragraph selection test.')
+assert e.text==probe_prefix+'Paragraph selection test.'+probe_suffix and e.pasted==1
+
+# Short headings, bracketed text and terminal paragraphs exercise the same
+# content checks. These are simulated text blocks, not a claim of native HWP
+# table-cell validation. Surrounding cell-like labels must remain unchanged.
+for delimiter in ('\n','\r\n'):
+    contexts=(('',delimiter+'뒤 문단'),
+              ('앞 문단'+delimiter,delimiter+'뒤 문단'),
+              ('[앞 셀]'+delimiter,delimiter+'[다음 셀]'),
+              ('앞 문단'+delimiter,''),
+              ('앞 문단'+delimiter,delimiter))
+    for before,after in contexts:
+        for text in ('가','[향후]','(추천사유)','표의 마지막 문장입니다.'):
+            for offset in (0,len(text)//2,len(text)):
+                original_block=before+text+after
+                e=AdvancingRight(original_block,len(before)+offset)
+                driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+                assert snapshot.text==text and e.text==original_block
+                expected_retries=2 if after and len(after)>len(delimiter) else (1 if after else 0)
+                assert e.events.count((k.RIGHT,))==expected_retries
+                assert e.events.count((k.CTRL,k.SHIFT,k.UP))<=3
+                assert (k.CTRL,k.SHIFT,k.DOWN) not in e.events
+                driver.apply(snapshot,'Replacement')
+                assert e.text==before+'Replacement'+after and e.pasted==1
+
+# An unrelated result must not trigger the second candidate. Only an exact
+# baseline copy demonstrates the observed unchanged-boundary condition.
+e=AdvancingRight(probe_prefix+probe_text+probe_suffix,len(probe_prefix)+4)
+def unrelated_first_reselect(editor,keys):
+    if keys==(k.CTRL,k.SHIFT,k.UP) and editor.events.count(keys)==2:
+        editor.active=editor.following(editor.active)
+e.after_chord=unrelated_first_reselect;refused(e)
+assert e.events.count((k.RIGHT,))==1
+
+# The additional candidate is bounded and must itself match the exact source
+# without one delimiter. A second bad range cannot be accepted or retried.
+e=AdvancingRight(probe_prefix+probe_text+probe_suffix,len(probe_prefix)+4)
+def wrong_second_reselect(editor,keys):
+    if keys==(k.CTRL,k.SHIFT,k.UP) and editor.events.count(keys)==3:
+        editor.active=editor.following(editor.active)
+e.after_chord=wrong_second_reselect;refused(e)
+assert e.events.count((k.RIGHT,))==2
+assert e.events.count((k.CTRL,k.SHIFT,k.UP))==3
+
+# Actual user input during the extra candidate stops before the next key. No
+# document mutation or paste is issued after the changed activity revision.
+e=AdvancingRight(probe_prefix+probe_text+probe_suffix,len(probe_prefix)+4)
+def cancel_retry(editor,keys):
+    if keys==(k.RIGHT,) and editor.events.count(keys)==2:
+        editor.revision+=1
+e.after_chord=cancel_retry;refused(e)
+assert e.events[-1]==(k.RIGHT,)
+assert e.events.count((k.CTRL,k.SHIFT,k.UP))==2
 
 # Forward selection is not the inverse of backward selection in every host.
 # Neither missing nor broader Ctrl+Shift+Down affects the new end-based route.
@@ -248,4 +331,4 @@ assert (k.CTRL,k.DOWN) in e.events and (k.CTRL,k.SHIFT,k.UP) in e.events
 driver.apply(snapshot,'Keyboard-only translation.')
 assert e.text==prefix+'Keyboard-only translation.'+suffix and e.pasted==1
 
-print('Paragraph direction: endpoint probe, HWP-like forward auto-selection, asymmetric navigation, exact restoration, start/end/CRLF boundaries, synthetic copy breaks, user selections and no mouse input: PASS')
+print('Paragraph direction: endpoint probe, observed HWP advancing-Right regression, bounded exact-source retry, asymmetric navigation, restoration, start/end/CRLF boundaries, synthetic copy breaks, user selections and no mouse input: PASS')

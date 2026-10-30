@@ -24,13 +24,14 @@ import clipboard_process
 import focus_guard
 import keyboard_access as keyboard
 
-VERSION = 'paragraph-probe-1'
+VERSION = 'paragraph-probe-2'
 REPORT_NAME = 'paragraph-probe.json'
 COPY = (keyboard.CTRL, ord('C'))
 ALLOWED_KEYS = frozenset((COPY, (keyboard.CTRL, keyboard.DOWN),
     (keyboard.CTRL, keyboard.SHIFT, keyboard.UP), (keyboard.SHIFT, keyboard.LEFT),
     (keyboard.SHIFT, keyboard.RIGHT), (keyboard.RIGHT,), (keyboard.LEFT,)))
-NEWLINES = {'\r': 'CR', '\n': 'LF', '\u2028': 'LS', '\u2029': 'PS'}
+NEWLINES = {'\r': 'CR', '\n': 'LF', '\v': 'VT', '\f': 'FF', '\x85': 'NEL',
+            '\u2028': 'LS', '\u2029': 'PS'}
 
 
 class ProbeStopped(Exception):
@@ -49,16 +50,22 @@ def metadata(text, baseline, caret=None):
     """Allowlisted numeric/boolean metadata; never serialize arbitrary text."""
     result = {'available': text is not None}
     if text is not None:
-        ending = []
-        for char in reversed(text):
-            if char not in NEWLINES or len(ending) >= 4:
-                break
-            ending.append(NEWLINES[char])
+        leading_count = len(text) - len(text.lstrip(''.join(NEWLINES)))
+        ending_count = len(text) - len(text.rstrip(''.join(NEWLINES)))
+        leading = [NEWLINES[char] for char in text[:min(leading_count, 4)]]
+        ending = [NEWLINES[char] for char in text[len(text) - min(ending_count, 4):]] if ending_count else []
         result.update(chars=len(text), utf16_units=len(text.encode('utf-16-le', errors='replace')) // 2,
-                      terminal_newlines=list(reversed(ending)), whitespace_only=not bool(text.strip()))
+                      leading_newlines=leading, terminal_newlines=ending,
+                      has_leading_boundary=bool(leading_count), has_terminal_boundary=bool(ending_count),
+                      leading_boundary_chars=leading_count, terminal_boundary_chars=ending_count,
+                      whitespace_only=not bool(text.strip()))
         if baseline is not None:
             result.update(equals_baseline=text == baseline,
-                          equals_trimmed=text == trim_boundary(baseline))
+                          equals_trimmed=text == trim_boundary(baseline),
+                          removed_prefix=len(text) < len(baseline) and baseline.endswith(text),
+                          removed_suffix=len(text) < len(baseline) and baseline.startswith(text),
+                          added_prefix=len(text) > len(baseline) and text.endswith(baseline),
+                          added_suffix=len(text) > len(baseline) and text.startswith(baseline))
     if isinstance(caret, (tuple, list)) and len(caret) == 5 and all(type(v) is int for v in caret):
         result['caret'] = list(caret)
     return result
@@ -126,7 +133,30 @@ def run_probe(env, lease_factory, guard):
             report['status'] = 'source_too_large'
             return report
         if trim_boundary(baseline) == baseline:
-            report['status'] = 'no_terminal_boundary'
+            # A rich editor can include a structural paragraph edge in its
+            # selection without serializing that edge into plain copied text.
+            # Probe both directions and record only their relation to baseline.
+            # An unchanged copy does not prove whether the caret moved, so do
+            # not assume an inverse key is needed in that ambiguous case.
+            press((keyboard.SHIFT, keyboard.RIGHT))
+            right_probe = copied('boundary_shift_right_probe')
+            if right_probe != baseline:
+                press((keyboard.SHIFT, keyboard.LEFT))
+                if copied('boundary_shift_left_restore') != baseline:
+                    report['status'] = 'restore_mismatch'
+                    return report
+            else:
+                report['right_probe_copy_unchanged'] = True
+            press((keyboard.SHIFT, keyboard.LEFT))
+            left_probe = copied('boundary_shift_left_probe')
+            if left_probe != baseline:
+                press((keyboard.SHIFT, keyboard.RIGHT))
+                if copied('boundary_shift_right_restore') != baseline:
+                    report['status'] = 'restore_mismatch'
+                    return report
+            else:
+                report['left_probe_copy_unchanged'] = True
+            report['status'] = 'boundary_probes_completed'
             return report
 
         press((keyboard.SHIFT, keyboard.LEFT))
@@ -155,6 +185,15 @@ def run_probe(env, lease_factory, guard):
         alternative = copied('end_then_previous_paragraph')
         report['status'] = 'completed'
         report['alternate_matches_trimmed'] = alternative == trim_boundary(baseline)
+        if alternative == baseline:
+            # HWP diagnostic v1 showed Right crossing a further character when
+            # collapsing a block. Only the unchanged baseline permits this one
+            # bounded second candidate; no text is changed or pasted.
+            for keys in ((keyboard.RIGHT,), (keyboard.LEFT,), (keyboard.LEFT,),
+                         (keyboard.CTRL, keyboard.SHIFT, keyboard.UP)):
+                press(keys)
+            second = copied('end_then_two_left_previous_paragraph')
+            report['second_alternate_matches_trimmed'] = second == trim_boundary(baseline)
         return report
     except ProbeStopped:
         report['status'] = 'aborted'
@@ -231,7 +270,7 @@ def main():
     from tkinter import ttk
 
     root = tk.Tk()
-    root.title('STOOM SST · 문단 선택 진단')
+    root.title('STOOM SST · 문단 선택 진단 v2')
     root.geometry('640x550')
     root.configure(bg='#ffffff')
     root.minsize(600, 530)
@@ -245,19 +284,19 @@ def main():
     if logo.is_file():
         root.brand_image = tk.PhotoImage(file=str(logo))
         tk.Label(header, image=root.brand_image, bg='#071019').pack(side='left', padx=(0, 12))
-    tk.Label(header, text='SST  문단 선택 진단', bg='#071019', fg='#e3faff',
+    tk.Label(header, text='SST  문단 선택 진단 v2', bg='#071019', fg='#e3faff',
              font=('맑은 고딕', 17, 'bold')).pack(side='left')
     body = tk.Frame(root, bg='white', padx=24, pady=20)
     body.pack(fill='both', expand=True)
-    instructions = ('1. 한글에서 저장할 필요 없는 새 빈 문서를 엽니다.\n'
-                    '2. 다음 세 문장을 Enter로 구분해 직접 입력합니다.\n'
-                    '     앞 문단입니다.\n'
-                    '     문단 선택을 시험합니다.\n'
-                    '     뒤 문단입니다.\n'
-                    '3. 두 번째 문장 안에 커서를 놓고, 드래그 없이 F8을 누릅니다.\n'
+    instructions = ('1. Outlook에서 보내지 않을 새 메일의 빈 본문을 엽니다.\n'
+                    '2. 다음 두 문장을 Enter로 구분해 직접 입력합니다.\n'
+                    '     이렇게 사용할 수 있어요.\n'
+                    '     시프트만 두번 누르면 된답니다.\n'
+                    '3. 두 번째 문장 끝에서 Enter를 더 누르지 말고 F8을 누릅니다.\n'
+                    '     글을 드래그하지 않은 상태로 시험합니다.\n'
                     '4. 완료될 때까지 잠시 입력을 멈춥니다. Esc로 중단할 수 있습니다.\n\n'
                     '선택·방향키·복사만 시험합니다. 번역하거나 붙여넣지 않습니다.\n'
-                    '문서 글자는 저장하지 않으며 글자 수·줄바꿈·일치 여부만 기록합니다.\n'
+                    '본문 글자는 저장하지 않으며 글자 수·줄바꿈·범위 관계만 기록합니다.\n'
                     '진단 후 이전 클립보드를 복원합니다. 기존 문서 대신 빈 문서를 사용하세요.')
     tk.Label(body, text=instructions, justify='left', anchor='w', bg='white', fg='#17394c',
              font=('맑은 고딕', 10), wraplength=580).pack(fill='x')
@@ -316,7 +355,7 @@ def main():
                     user.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
                     user.GetWindowThreadProcessId(payload.foreground, ctypes.byref(target_pid))
                     if target_pid.value == os.getpid():
-                        status.set('한글의 테스트 문장 안에 커서를 놓고 F8을 누르세요.')
+                        status.set('Outlook의 테스트 문장 안에 커서를 놓고 F8을 누르세요.')
                         continue
                     busy = True
                     status.set('선택 범위를 확인하고 있습니다. 입력을 잠시 멈춰 주세요. Esc: 중단')
@@ -422,13 +461,80 @@ def self_test():
     assert not any(ord(letter) in keys for keys in env.events for letter in ('V', 'X'))
     assert (0x08,) not in env.events and (0x2e,) not in env.events and (0x20,) not in env.events
     assert metadata('source\r\n', 'source\r\n')['terminal_newlines'] == ['CR', 'LF']
+
+    # Mirror the observed HWP selection collapse: Right also crosses one
+    # character. The first candidate returns baseline; the second excludes its
+    # delimiter, without ever modifying the fake document.
+    class AdvancingRight(Fake):
+        def chord(self, *keys):
+            selected = self.anchor_pos != self.active
+            super().chord(*keys)
+            if keys == (keyboard.RIGHT,) and selected:
+                self.active = self.anchor_pos = self.following()
+    env = AdvancingRight(); lease = FakeLease(env); original = env.text
+    report = run_probe(env, lambda: lease, lambda: None)
+    assert report['status'] == 'completed' and not report['alternate_matches_trimmed']
+    assert report['second_alternate_matches_trimmed'] and env.text == original and lease.restored
+    assert [stage for stage in report['stages'] if stage['stage'] == 'selected_single_suffix'][0]['chars'] == 1
+
+    # A source with no copied terminal newline still needs boundary evidence.
+    # Test backward automatic and forward manual selection, including an
+    # unchanged Shift+Right at EOF which must not be blindly reversed.
+    for forward in (False, True):
+        env = Fake(); env.text = 'PREFIX\r\nPRIVATE_FIXED_SOURCE_921'
+        start = env.text.index('PRIVATE')
+        if forward:
+            env.anchor_pos = start; env.active = len(env.text)
+        else:
+            env.anchor_pos = env.active = start + 2
+        lease = FakeLease(env); original = env.text
+        report = run_probe(env, lambda: lease, lambda: None)
+        assert report['status'] == 'boundary_probes_completed', report
+        assert env.text == original and lease.restored and report['clipboard_restored']
+        stages = {item['stage']: item for item in report['stages']}
+        if forward:
+            assert report['right_probe_copy_unchanged']
+            assert 'boundary_shift_left_restore' not in stages
+            assert stages['boundary_shift_left_probe']['removed_suffix']
+        else:
+            assert stages['boundary_shift_right_probe']['removed_prefix']
+            assert stages['boundary_shift_left_probe']['added_prefix']
+            assert stages['boundary_shift_left_probe']['leading_newlines'] == ['CR', 'LF']
+        serialized = json.dumps(report)
+        assert 'PRIVATE_FIXED_SOURCE_921' not in serialized and 'PREFIX' not in serialized
+        assert all(keys in ALLOWED_KEYS for keys in env.events)
+
+    # Metadata describes relationships and boundaries only, never the actual
+    # added/removed characters. CRLF counts as two copied boundary characters.
+    assert metadata('tail', 'headtail')['removed_prefix']
+    assert metadata('head', 'headtail')['removed_suffix']
+    assert metadata('prebase', 'base')['added_prefix']
+    assert metadata('basepost', 'base')['added_suffix']
+    edges = metadata('\r\nbody\v\u2028\u2029', None)
+    assert edges['has_leading_boundary'] and edges['leading_boundary_chars'] == 2
+    assert edges['has_terminal_boundary'] and edges['terminal_boundary_chars'] == 3
+    assert edges['terminal_newlines'] == ['VT', 'LS', 'PS']
+
+    class RestoreMismatch(Fake):
+        def chord(self, *keys):
+            super().chord(*keys)
+            if keys == (keyboard.SHIFT, keyboard.LEFT):
+                self.active = self.previous()
+    env = RestoreMismatch(); env.text = 'PREFIX\r\nPRIVATE_FIXED_SOURCE_921'
+    env.anchor_pos = env.active = 10
+    lease = FakeLease(env); original = env.text
+    report = run_probe(env, lambda: lease, lambda: None)
+    assert report['status'] == 'restore_mismatch' and lease.restored and env.text == original
+    assert not any(item['stage'] == 'boundary_shift_left_probe' for item in report['stages'])
+
     env = Fake(); lease = FakeLease(env)
+    original = env.text
     def abort():
         if len(env.events) >= 3:
             raise ProbeStopped()
     stopped = run_probe(env, lambda: lease, abort)
     assert stopped['status'] == 'aborted' and stopped['clipboard_restored'] and env.text == original
-    print('Paragraph probe self-test: fixed fixture only; arrow/copy allowlist, no source output, no document writes, clipboard cleanup and abort: PASS')
+    print('Paragraph probe v2 self-test: fixed fixtures only; HWP extra step, no-terminal boundary probes, relationship metadata, no document writes, clipboard cleanup and abort: PASS')
 
 
 if __name__ == '__main__':

@@ -291,6 +291,19 @@ class Driver:
                     for keys in ((RIGHT,),(LEFT,),(CTRL,SHIFT,UP)):
                         self.guard(revision);self.env.chord(*keys);self.pause(.025,revision)
                     shrunk=self.copy(lease,revision)
+                    if shrunk==text:
+                        # The user-run HWP probe returned the identical range:
+                        # Right collapsed the block, but the preceding caret
+                        # unit was a visible character rather than the CRLF.
+                        # Some hosts collapse AND advance on Right. From this
+                        # confirmed baseline only, try one additional Left.
+                        # Never infer success from counts or retry a mismatch.
+                        self.record('paragraph_collapse_advance_retry')
+                        for keys in ((RIGHT,),(LEFT,),(LEFT,),(CTRL,SHIFT,UP)):
+                            self.guard(revision);self.env.chord(*keys);self.pause(.025,revision)
+                        shrunk=self.copy(lease,revision)
+                        if shrunk==without_break:
+                            self.record('paragraph_collapse_advance_confirmed',source_chars=len(shrunk))
                     if shrunk!=without_break:
                         self.record('paragraph_end_reselect_failed',source_chars=len(shrunk) if shrunk is not None else 0)
                         raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
