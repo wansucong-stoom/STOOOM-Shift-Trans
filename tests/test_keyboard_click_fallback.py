@@ -1,4 +1,4 @@
-"""Diagnostic clicks have no keyboard fallback; default selection is line-only."""
+"""Caret-click failures have no keyboard fallback; line mode stays separate."""
 from pathlib import Path
 import sys
 from types import SimpleNamespace as NS
@@ -13,9 +13,9 @@ try:k.Windows.select_by_click(env,lambda:None,lambda seconds:None)
 except k.KeyboardError:pass
 else:raise AssertionError('diagnostic helper silently changed strategy')
 
-# Ordinary selection never queries geometry or invokes diagnostic clicks.
+# Explicit line mode never queries geometry or invokes caret clicks.
 events=[];guards=[];pauses=[]
-env=NS(caret_point=forbidden,select_by_click=forbidden,_move=forbidden,click=forbidden,
+env=NS(selection_mode='current_line',caret_point=forbidden,select_by_click=forbidden,_move=forbidden,click=forbidden,
        chord=lambda *keys:events.append(keys))
 strategy=k.Windows.select(env,lambda:guards.append(1),pauses.append)
 assert strategy=='current_line' and events==[(k.SHIFT,k.HOME)] and guards and pauses
@@ -28,4 +28,4 @@ try:k.Windows.select(env,cancelled,lambda seconds:None)
 except k.Cancelled:pass
 else:raise AssertionError('cancelled selection continued')
 assert not events
-print('PASS: no fallback from diagnostic clicks; default current-line route never uses mouse/vertical navigation')
+print('PASS: no fallback from caret clicks; explicit line mode never uses mouse/vertical navigation')

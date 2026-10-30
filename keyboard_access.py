@@ -52,6 +52,7 @@ class Windows:
     sleep=staticmethod(time.sleep)
     def __init__(self,focus,activity,safety):
         self.focus=focus;self.activity=activity;self.safety=safety
+        self.selection_mode='triple_click'
         self.u=C.WinDLL('user32',use_last_error=True)
         self.u.SendInput.argtypes=[W.UINT,C.POINTER(INPUT),C.c_int];self.u.SendInput.restype=W.UINT
         self.u.GetWindowThreadProcessId.argtypes=[W.HWND,C.POINTER(W.DWORD)];self.u.GetWindowThreadProcessId.restype=W.DWORD
@@ -151,13 +152,20 @@ class Windows:
             value=INPUT();value.kind=0;value.mouse=MOUSEINPUT(0,0,0,flag,0,INPUT_TAG);events.append(value)
         self._send(events)
     def select(self,guard,pause):
+        if getattr(self,'selection_mode','current_line')=='triple_click':
+            self.select_by_click(guard,pause)
+            return 'triple_click'
         return select_current_line(self,guard,pause)
+    def click_point(self):
+        import caret_locator
+        return caret_locator.locate(self.focus)
     def select_by_click(self,guard,pause):
-        """Explicit diagnostic helper; the application route never calls it."""
-        point=self.caret_point()
+        """Click only a located text caret, never the current pointer position."""
+        resolver=getattr(self,'click_point',None) or self.caret_point
+        point=resolver()
         if point:
             original=W.POINT();saved=bool(self.u.GetCursorPos(C.byref(original)))
-            guard();self._move(point)
+            guard();self._move(point);pause(.015)
             try:
                 for _ in range(3):
                     guard();current=W.POINT()
@@ -232,9 +240,9 @@ class Driver:
                 self.record('selection_started')
                 # commit_space remains a compatible call argument; capture
                 # never inserts/removes text or tries another selection route.
-                self.env.select(lambda:self.guard(revision),lambda s:self.pause(s,revision))
+                strategy=self.env.select(lambda:self.guard(revision),lambda s:self.pause(s,revision))
                 self.record('selection_sent')
-                self.record('selection_current_line')
+                self.record('selection_triple_click' if strategy=='triple_click' else 'selection_current_line')
                 text=self.copy(lease,revision)
             if not text or not text.strip():raise KeyboardError('선택할 글이 없습니다. 줄 끝에 커서를 놓거나 원하는 문장을 드래그한 뒤 다시 시도해 주세요.')
             # A manual selection is exact, including its line separators. Do

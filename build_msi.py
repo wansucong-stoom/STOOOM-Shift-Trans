@@ -1,8 +1,9 @@
 """Build a per-user Windows Installer package (Python 3.11 on Windows).
 
 MSI has its own install directory and upgrade family. It never takes ownership
-of an existing Inno installation or of downloaded models/settings. No custom
-actions, elevation, security-setting changes, or application launch are used.
+of an existing Inno installation or of downloaded models/settings. One
+non-elevated custom action starts the installed application after success.
+No security-setting changes or forced application termination are used.
 """
 from pathlib import Path
 import argparse
@@ -19,6 +20,12 @@ from release_updates import VERSION
 ROOT = Path(__file__).resolve().parent
 UPGRADE_CODE = '{34A9CBE3-280D-5941-915A-1D64B2E43C03}'
 NAMESPACE = uuid.UUID('34a9cbe3-280d-5941-915a-1d64b2e43c03')
+RELAUNCH_ACTION = 'LaunchSST'
+RELAUNCH_TYPE = 18 + 128 + 64  # Installed EXE, asynchronous, no wait/return check.
+RELAUNCH_ELIGIBLE = 'NOT Installed AND NOT (REMOVE~="ALL") AND NOT UPGRADINGPRODUCTCODE AND (&Main=3) AND NOT ReplacedInUseFiles'
+RELAUNCH_CONDITION = '(SSTLAUNCH=1) AND (' + RELAUNCH_ELIGIBLE + ')'
+RELAUNCH_FULL_UI = '(' + RELAUNCH_CONDITION + ') AND (UILevel=5)'
+RELAUNCH_BASIC_UI = '(' + RELAUNCH_CONDITION + ') AND ((UILevel=3) OR (UILevel=4))'
 
 
 def guid(text):
@@ -65,8 +72,11 @@ def build_database(version, payload, output):
         ('UpgradeCode', UPGRADE_CODE), ('ARPPRODUCTICON', 'SST.ico'),
         ('ARPURLINFOABOUT', 'https://github.com/wansucong-stoom/STOOOM-Shift-Trans'),
         ('ARPNOMODIFY', '1'), ('MSIRESTARTMANAGERCONTROL', 'DisableShutdown'),
-        ('SecureCustomProperties', 'OLDPRODUCTS;NEWERPRODUCTS'),
+        ('SecureCustomProperties', 'OLDPRODUCTS;NEWERPRODUCTS;SSTLAUNCH'),
         ('DefaultUIFont', 'SegoeNormal'), ('INSTALLLEVEL', '1'),
+        # Older installed updaters already use /passive without a launch flag.
+        # A default here fixes that transition too; /qn never launches a UI.
+        ('SSTLAUNCH', '1'),
     ])
     # Per-user scope: ALLUSERS is intentionally absent. Major upgrades are
     # transactional; this family does not match the previous EXE installer.
@@ -127,6 +137,13 @@ def build_database(version, payload, output):
                         'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
         if relative == 'STOOMShiftTranslator.exe': main_component = component
     assert main_component
+    main_file = ident('F', 'STOOMShiftTranslator.exe')
+    msilib.add_data(db, 'CustomAction', [(RELAUNCH_ACTION, RELAUNCH_TYPE, main_file, '--after-update')])
+    # A non-deferred Type 18 needs its installed file: run only after the
+    # successful commit. Full UI launches from Finish instead, never twice.
+    finalize = db.OpenView("SELECT `Sequence` FROM `InstallExecuteSequence` WHERE `Action` = 'InstallFinalize'")
+    finalize.Execute(None); finalize_sequence = finalize.Fetch().GetInteger(1); finalize.Close()
+    msilib.add_data(db, 'InstallExecuteSequence', [(RELAUNCH_ACTION, RELAUNCH_BASIC_UI, finalize_sequence + 10)])
     msilib.add_data(db, 'Icon', [('SST.ico', msilib.Binary(str(ROOT/'stoom.ico')))])
     msilib.add_data(db, 'Shortcut', [
         ('StartSST', 'ProgramMenuFolder', 'SSTMSI|STOOM Shift Translator', main_component,
@@ -161,7 +178,8 @@ def build_database(version, payload, output):
     welcome.pushbutton('Install',218,243,65,18,3,'설치','Cancel').event('EndDialog','Return')
     welcome.pushbutton('Cancel',290,243,65,18,3,'취소','Install').event('EndDialog','Exit')
     msilib.add_data(db,'InstallUISequence',[('WelcomeSST','NOT Installed',1290)])
-    for name,message in (('ExitDialog','작업이 완료되었습니다. 설치한 경우 시작 메뉴의 STOOM Shift Translator를 실행해 주세요.'),
+    msilib.add_data(db, 'CheckBox', [('SSTLAUNCH', '1')])
+    for name,message in (('ExitDialog','작업이 완료되었습니다.'),
                          ('FatalError','설치를 완료하지 못했습니다. 실행 중인 번역기가 있다면 종료한 뒤 다시 시도해 주세요.'),
                          ('UserExit','설치를 취소했습니다.')):
         dlg=msilib.Dialog(db,name,50,50,370,270,3,'[ProductName]','Finish','Finish','Finish')
@@ -169,7 +187,13 @@ def build_database(version, payload, output):
         dlg.text('Title',20,24,275,42,3,'{\\SegoeTitle}STOOM Shift Translator')
         dlg.text('Message',20,90,325,90,3,message)
         dlg.line('Line',0,229,370,1)
-        dlg.pushbutton('Finish',290,243,65,18,3,'마침',None).event('EndDialog','Return')
+        if name == 'ExitDialog':
+            dlg.checkbox('LaunchSST',20,190,325,18,3,'SSTLAUNCH','STOOM Shift Translator 실행','Finish')
+            msilib.add_data(db, 'ControlCondition', [('ExitDialog','LaunchSST','Hide','NOT (' + RELAUNCH_ELIGIBLE + ')')])
+        finish = dlg.pushbutton('Finish',290,243,65,18,3,'마침','LaunchSST' if name == 'ExitDialog' else None)
+        if name == 'ExitDialog':
+            finish.event('DoAction', RELAUNCH_ACTION, RELAUNCH_FULL_UI, ordering=1)
+        finish.event('EndDialog','Return',ordering=2)
     cab.commit(db)
     db.Commit()
     # Query back package invariants without installing or executing any action.
@@ -182,7 +206,11 @@ def build_database(version, payload, output):
         view.Close();return out
     assert len(query('SELECT `File` FROM `File`')) == len(files)
     assert not query("SELECT `Value` FROM `Property` WHERE `Property` = 'ALLUSERS'")
-    assert not query('SELECT `Action` FROM `CustomAction`')
+    assert query('SELECT `Action`, `Type`, `Source`, `Target` FROM `CustomAction`') == [[RELAUNCH_ACTION, str(RELAUNCH_TYPE), main_file, '--after-update']]
+    assert query("SELECT `Condition`, `Sequence` FROM `InstallExecuteSequence` WHERE `Action` = 'LaunchSST'") == [[RELAUNCH_BASIC_UI, str(finalize_sequence + 10)]]
+    assert not query("SELECT `Action` FROM `InstallUISequence` WHERE `Action` = 'LaunchSST'")
+    assert query("SELECT `Dialog_`, `Control_`, `Argument`, `Condition`, `Ordering` FROM `ControlEvent` WHERE `Event` = 'DoAction'") == [['ExitDialog','Finish',RELAUNCH_ACTION,RELAUNCH_FULL_UI,'1']]
+    assert query("SELECT `Value` FROM `Property` WHERE `Property` = 'SSTLAUNCH'") == [['1']]
     assert len(query('SELECT `Shortcut` FROM `Shortcut`')) == 2
     assert query("SELECT `Value` FROM `Property` WHERE `Property` = 'ProductName'")==[['STOOM Shift Translator']]
     assert query('SELECT `Name` FROM `Shortcut`')==[['SSTMSI|STOOM Shift Translator']]*2
@@ -192,7 +220,10 @@ def build_database(version, payload, output):
     assert query("SELECT `Sequence` FROM `InstallExecuteSequence` WHERE `Action` = 'RemoveExistingProducts'")==[['1510']]
     manifest={'version':version,'product_code':product,'upgrade_code':UPGRADE_CODE,
               'scope':'per-user','directory':'%LOCALAPPDATA%/Programs/STOOM Shift Translator MSI',
-              'files':records,'custom_actions':0,'signed':False,
+              'files':records,'custom_actions':1,'signed':False,
+              'post_install_launch':{'type':RELAUNCH_TYPE,'source_file':main_file,'arguments':'--after-update',
+                                     'full_ui':'Finish button, checked by default','basic_or_reduced_ui':'after InstallFinalize',
+                                     'excluded':['quiet UI','repair/modify','uninstall','failed/cancelled install','in-use files requiring restart']},
               'validation':'MSI database tables; no install/uninstall executed',
               'limitations':['Separate MSI family; EXE migration is not automatic.',
                              'Optional native TSF component is not registered by this MSI.',

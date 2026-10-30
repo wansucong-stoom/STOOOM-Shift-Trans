@@ -3,8 +3,10 @@
 MSI는 현재 Windows 계정에 설치합니다. 별도의 Python 설치는 필요하지 않습니다. 앞으로 새 릴리즈의 설치 파일은 MSI로 통일하며 과거에 게시한 EXE 파일은 보존합니다.
 
 1. 실행 중인 번역기가 있으면 트레이 메뉴에서 종료합니다.
-2. `STOOM-Translator-v0614-TSF-setup.msi`를 실행합니다.
-3. 설치 후 시작 메뉴의 **STOOM Shift Translator**를 실행합니다.
+2. `STOOM-Translator-v0615-TSF-setup.msi`를 실행합니다.
+3. 설치 완료 화면의 **STOOM Shift Translator 실행**은 기본으로 선택되어 있습니다. **마침**을 누르면 번역기를 실행합니다. 바로 실행하지 않으려면 선택을 해제하세요.
+
+앱의 업데이트 기능으로 설치한 경우에는 정상 완료 후 번역기를 다시 실행합니다. 시작 메뉴나 바탕화면 바로가기로도 언제든 열 수 있습니다. 설치 실패·취소·제거·복구나 완전 무인 설치에서는 자동 실행하지 않습니다. 사용 중인 파일 교체로 Windows 재시작이 필요한 경우에도 즉시 실행하지 않습니다.
 
 기존 EXE 설치와 MSI 설치는 서로 다른 설치 관리 체계를 사용합니다. MSI는 기존 EXE 버전을 자동 제거하거나 같은 파일의 소유권을 넘겨받지 않고 `%LOCALAPPDATA%\Programs\STOOM Shift Translator MSI`에 설치합니다. 기존 EXE 버전이 남아 있다면 사용하려는 버전을 구분해 실행하세요. 동시에 실행되면 앱의 중복 실행 방지 기능에 따라 이미 실행된 버전이 사용됩니다.
 
@@ -12,7 +14,9 @@ MSI는 현재 Windows 계정에 설치합니다. 별도의 Python 설치는 필�
 
 언어팩과 설정은 기존 `%LOCALAPPDATA%\STOOMShiftTranslator05`에서 공유합니다. MSI의 설치·제거 대상에는 이 사용자 데이터 폴더가 포함되지 않습니다. 이미 등록한 TSF 구성요소는 유지하며, 이 MSI가 새로 TSF를 등록하지는 않습니다.
 
-같은 계정의 향후 MSI 업데이트는 공통 UpgradeCode로 이전 MSI를 교체하도록 구성했습니다. EXE에서 MSI로의 자동 전환, 실제 설치·제거·복구·업그레이드 동작은 아직 검증하지 않았습니다. 검증한 범위는 MSI 테이블, 한국어 안내문 저장, 내장 CAB 추출과 모든 배포 파일 해시 일치입니다.
+같은 계정의 MSI 업데이트는 이전 MSI 버전을 교체하고 사용자 데이터를 유지하도록 구성했습니다. EXE에서 MSI로의 자동 전환은 지원하지 않습니다.
+
+0.6.15의 자동 실행은 MSI 구성과 Windows Installer의 실행 조건을 검사했습니다. 새 버전의 실제 설치 완료·업데이트 후 실행, 제거·복구 동작은 사용자 시험 대상입니다. 배포 파일 검증은 아래 명령으로 내장 CAB를 추출해 확인합니다.
 
 ## 보안 경고
 
@@ -26,7 +30,9 @@ MSI는 현재 Windows 계정에 설치합니다. 별도의 Python 설치는 필�
 
 ```powershell
 python build_msi.py
-python verify_msi.py dist/STOOM-Translator-v0614-TSF-setup.msi work/msi-verify
+python verify_msi.py dist/STOOM-Translator-v0615-TSF-setup.msi work/msi-verify
 ```
 
 검증 명령은 새로운 폴더로 CAB 파일을 추출하고 빌드 매니페스트와 바이트를 비교합니다. MSI 설치 작업은 실행하지 않습니다. 이미 존재하는 MSI나 검증 폴더를 덮어쓰지 않습니다.
+
+`tests/test_msi_relaunch.py`는 작은 시험용 MSI로 완료 화면·자동 실행 조건을 검사합니다. 이 시험은 실제 설치나 번역기 실행을 수행하지 않습니다.

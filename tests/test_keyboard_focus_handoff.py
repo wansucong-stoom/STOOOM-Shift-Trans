@@ -73,6 +73,7 @@ def app():
     a=ns['App']();a._quitting=False;a.busy=False;a.engine_initializing=False
     a._keyboard_request=None;a._pending_input=None;a._input_active_job=None;a.errors=[]
     a.target={'shift':NS(currentText=lambda:'영어')};a.source=NS(currentText=lambda:'한국어')
+    a.selection_mode=NS(currentData=lambda:'triple_click')
     a.engine=NS(currentText=lambda:'기본 오프라인 엔진');a.external_path=''
     a.tap=NS(activity_snapshot=lambda:(state['revision'],0.0),activity_cause=lambda:'typing')
     a.engine_configuration=lambda:state['configuration'];a.isActiveWindow=lambda:False
