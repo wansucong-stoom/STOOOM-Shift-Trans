@@ -220,6 +220,38 @@ class Driver:
                 self.record('copy_timeout',cause='clipboard')
                 return None
             self.pause(.01,revision)
+    def normalize_paragraph_start(self,text,lease,revision):
+        # Some rich editors include an adjacent paragraph boundary in an
+        # automatic block, but omit it from CF_UNICODETEXT. Replacing that
+        # block can merge paragraphs despite an exact plain-text match.
+        message='문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.'
+        def step(key):
+            self.guard(revision);self.env.chord(SHIFT,key);self.pause(.025,revision)
+            copied=self.copy(lease,revision)
+            # Missing copy data is not evidence that a selected endpoint
+            # moved. Retry the copy without another navigation key; otherwise
+            # an inverse key could put the hidden boundary back into the block.
+            if not copied:copied=self.copy(lease,revision)
+            if not copied:raise KeyboardError(message)
+            return copied
+        self.record('paragraph_start_probe')
+        if step(RIGHT)!=text:
+            if step(LEFT)!=text:raise KeyboardError(message)
+            return
+        if step(LEFT)!=text:
+            if step(RIGHT)!=text:raise KeyboardError(message)
+            return
+        # Both directions retained identical copied text in the Outlook
+        # diagnostic. That alone is not proof of a no-op or of direction.
+        # Cross the invisible edge, then prove a visible prefix was removed.
+        self.record('paragraph_start_hidden_edge')
+        if step(RIGHT)!=text:raise KeyboardError(message)
+        shorter=step(RIGHT)
+        if not shorter or len(shorter)>=len(text) or not text.endswith(shorter):
+            self.record('paragraph_start_unconfirmed')
+            raise KeyboardError(message)
+        if step(LEFT)!=text:raise KeyboardError(message)
+        self.record('paragraph_start_confirmed',source_chars=len(text))
     def capture(self,revision,commit_space=False):
         self.record('capture_started',revision=revision)
         self.guard(revision);self.env.safe()
@@ -309,6 +341,8 @@ class Driver:
                         raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
                 self.record('paragraph_trim_confirmed',source_chars=len(shrunk))
                 text=shrunk
+            elif automatic and strategy=='backward':
+                self.normalize_paragraph_start(text,lease,revision)
             if len(text.encode('utf-16-le'))//2>MAX_SOURCE or '\0' in text or '\ufffc' in text:
                 raise KeyboardError('선택한 텍스트가 너무 길거나 텍스트 이외의 개체가 포함되어 있습니다.')
             # Two actual copies, not a provider's cached range/value.

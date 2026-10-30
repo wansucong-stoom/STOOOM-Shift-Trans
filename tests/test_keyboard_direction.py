@@ -102,6 +102,30 @@ class AdvancingRight(Editor):
             self.active=self.anchor_pos=self.following(end)
 
 
+class InvisibleLeadingBoundary(Editor):
+    """Model consistent with the Outlook diagnostic, not an internal API claim.
+
+    Automatic selection includes the preceding delimiter. Copy hides that
+    delimiter at this one boundary, so a visually identical string can still
+    replace the paragraph break and merge it with the previous paragraph.
+    """
+    def __init__(self,text,caret,selection=None,paragraph_start=None):
+        super().__init__(text,caret,selection=selection)
+        self.paragraph_start=paragraph_start
+        self.leading_boundary=self.previous(paragraph_start)
+    def select(self,guard,pause):
+        strategy=super().select(guard,pause)
+        self.active=self.leading_boundary
+        return strategy
+    def chord(self,*keys):
+        super().chord(*keys)
+        if keys==(k.CTRL,ord('C')):
+            start,end=self.bounds()
+            if start==self.leading_boundary and end>self.paragraph_start:
+                self.lease.text=self.text[self.paragraph_start:end]
+                self.copy_values[-1]=self.lease.text
+
+
 def refused(editor):
     original=editor.text
     try:k.Driver(editor,editor.factory).capture(7)
@@ -182,6 +206,18 @@ for delimiter in ('\n','\r\n'):
             for offset in (0,len(text)//2,len(text)):
                 original_block=before+text+after
                 e=AdvancingRight(original_block,len(before)+offset)
+                if len(text)==1 and not after:
+                    # Collapsing a one-character automatic block produces no
+                    # copy data; that cannot prove which edge actually moved.
+                    refused(e)
+                    start=len(before)
+                    e=AdvancingRight(original_block,start,selection=(start,start+1))
+                    driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+                    assert snapshot.text==text and not snapshot.selected_automatically
+                    assert (k.SHIFT,k.RIGHT) not in e.events
+                    driver.apply(snapshot,'Replacement')
+                    assert e.text==before+'Replacement' and e.pasted==1
+                    continue
                 driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
                 assert snapshot.text==text and e.text==original_block
                 expected_retries=2 if after and len(after)>len(delimiter) else (1 if after else 0)
@@ -331,4 +367,129 @@ assert (k.CTRL,k.DOWN) in e.events and (k.CTRL,k.SHIFT,k.UP) in e.events
 driver.apply(snapshot,'Keyboard-only translation.')
 assert e.text==prefix+'Keyboard-only translation.'+suffix and e.pasted==1
 
-print('Paragraph direction: endpoint probe, observed HWP advancing-Right regression, bounded exact-source retry, asymmetric navigation, restoration, start/end/CRLF boundaries, synthetic copy breaks, user selections and no mouse input: PASS')
+# Demonstrate the failure separately from the corrected Driver: replacing an
+# automatically selected range solely because its copied text matches can
+# consume the invisible leading paragraph delimiter and join the paragraphs.
+outlook_text='ABCDEFGHIJKLMNOPQ'  # 17 characters, no leading/trailing delimiter.
+for delimiter in ('\n','\r\n'):
+    before='Previous paragraph'+delimiter
+    e=InvisibleLeadingBoundary(before+outlook_text,len(before)+7,paragraph_start=len(before))
+    e.select(lambda:None,lambda seconds:None)
+    lease=e.factory();lease.arm_copy();e.chord(k.CTRL,ord('C'))
+    assert lease.read_copy(e.owner_pids)==outlook_text
+    lease.replace_owned(outlook_text,'Replacement');e.chord(k.CTRL,ord('V'))
+    assert e.text=='Previous paragraphReplacement'
+
+    # The corrected capture locates the first visible character by the observed
+    # R/L unchanged-copy pattern, confirms a strict suffix, then restores the
+    # entire visible source without the hidden leading delimiter.
+    e=InvisibleLeadingBoundary(before+outlook_text,len(before)+7,paragraph_start=len(before))
+    driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+    assert snapshot.text==outlook_text and snapshot.selected_automatically
+    assert e.bounds()==(len(before),len(before)+len(outlook_text))
+    assert e.copy_values==[None,outlook_text,outlook_text,outlook_text,outlook_text,outlook_text[1:],outlook_text,outlook_text]
+    assert [len(value) if value is not None else None for value in e.copy_values]==[None,17,17,17,17,16,17,17]
+    driver.apply(snapshot,'Replacement')
+    assert e.text==before+'Replacement' and e.pasted==1
+
+    # A manually selected visible source is retained as-is, without navigation
+    # probes or replacement of the user's intended selection.
+    start=len(before);end=start+len(outlook_text)
+    e=InvisibleLeadingBoundary(before+outlook_text,start,selection=(end,start),paragraph_start=start)
+    driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+    assert not snapshot.selected_automatically and e.copy_values==[outlook_text,outlook_text]
+    assert (k.SHIFT,k.RIGHT) not in e.events and (k.SHIFT,k.LEFT) not in e.events
+    driver.apply(snapshot,'Manual replacement')
+    assert e.text==before+'Manual replacement' and e.pasted==1
+
+# Ordinary final paragraphs reveal a changed character on the first probe and
+# are restored exactly. A forward endpoint at document end instead yields one
+# Right no-op, then a changed Left probe; it must also be restored unchanged.
+for automatic_forward in (False,True):
+    before='Previous\r\n';text='Ordinary final paragraph'
+    e=Editor(before+text,len(before)+5,automatic_forward=automatic_forward)
+    driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+    assert snapshot.text==text and e.bounds()==(len(before),len(before)+len(text))
+    expected=([None,text,text[1:],text,text] if not automatic_forward else
+              [None,text,text,text[:-1],text,text])
+    assert e.copy_values==expected
+    driver.apply(snapshot,'Ordinary replacement')
+    assert e.text==before+'Ordinary replacement' and e.pasted==1
+
+# Visible internal paragraph delimiters are source text, not hidden edges. The
+# probe restores the complete selected block, including all visible delimiters.
+class VisibleMultipleParagraphs(Editor):
+    def select(self,guard,pause):
+        self.selected+=1;guard()
+        self.active=len('BEFORE\n');self.anchor_pos=len(self.text)-len('\nAFTER')
+        return 'backward'
+e=VisibleMultipleParagraphs('BEFORE\nONE\nTWO\nAFTER',9)
+driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+assert snapshot.text=='ONE\nTWO' and e.bounds()==(7,14)
+driver.apply(snapshot,'FIRST\nSECOND')
+assert e.text=='BEFORE\nFIRST\nSECOND\nAFTER' and e.pasted==1
+
+# Repeated unchanged copies never authorize a guessed endpoint. An editor that
+# ignores every Shift-arrow cannot prove a strict suffix and must not paste.
+class IgnoredEndpointKeys(InvisibleLeadingBoundary):
+    def chord(self,*keys):
+        if keys in ((k.SHIFT,k.RIGHT),(k.SHIFT,k.LEFT)):
+            self.events.append(keys)
+            return
+        super().chord(*keys)
+before='Previous\r\n'
+e=IgnoredEndpointKeys(before+outlook_text,len(before)+5,paragraph_start=len(before));refused(e)
+assert e.events.count((k.SHIFT,k.RIGHT))<=3 and e.events.count((k.SHIFT,k.LEFT))<=2
+
+# An empty copy cannot prove the visible-character endpoint for a one-character
+# hidden-boundary block; keep it unedited rather than infer a range from None.
+e=InvisibleLeadingBoundary(before+'A',len(before),paragraph_start=len(before));refused(e)
+
+# A non-suffix copy and an inexact restoration are rejected before delivery.
+class InconsistentLeadingCopy(InvisibleLeadingBoundary):
+    def __init__(self,*args,damage_copy,**kwargs):
+        super().__init__(*args,**kwargs);self.damage_copy=damage_copy
+    def chord(self,*keys):
+        super().chord(*keys)
+        if keys==(k.CTRL,ord('C')) and len(self.copy_values)==self.damage_copy:
+            self.lease.text='Unrelated visible text';self.copy_values[-1]=self.lease.text
+for damage_copy in (6,7):
+    e=InconsistentLeadingCopy(before+outlook_text,len(before)+5,paragraph_start=len(before),damage_copy=damage_copy)
+    refused(e)
+
+# An absent first probe copy is not proof that an endpoint moved. Retrying
+# Copy alone must recover the baseline before continuing the R/L probes.
+class MissingFirstProbeCopy(InvisibleLeadingBoundary):
+    def __init__(self,*args,missing_value=None,persistent=False,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.missing_value=missing_value;self.persistent=persistent
+    def chord(self,*keys):
+        super().chord(*keys)
+        if keys==(k.CTRL,ord('C')) and (len(self.copy_values)==3 or self.persistent and len(self.copy_values)==4):
+            self.lease.text=self.missing_value;self.copy_values[-1]=self.missing_value
+for missing_value in (None,''):
+    e=MissingFirstProbeCopy(before+outlook_text,len(before)+5,paragraph_start=len(before),missing_value=missing_value)
+    driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+    assert snapshot.text==outlook_text and e.bounds()==(len(before),len(before)+len(outlook_text))
+    assert e.copy_values==[None,outlook_text,missing_value,outlook_text,outlook_text,outlook_text,outlook_text[1:],outlook_text,outlook_text]
+    assert [keys for keys in e.events if keys in ((k.SHIFT,k.RIGHT),(k.SHIFT,k.LEFT))]==[(k.SHIFT,k.RIGHT),(k.SHIFT,k.LEFT),(k.SHIFT,k.RIGHT),(k.SHIFT,k.RIGHT),(k.SHIFT,k.LEFT)]
+    driver.apply(snapshot,'Recovered probe')
+    assert e.text==before+'Recovered probe' and e.pasted==1
+
+    # Two missing copies abort without an inverse arrow that could reintroduce
+    # the hidden paragraph boundary into the selected replacement range.
+    e=MissingFirstProbeCopy(before+outlook_text,len(before)+5,paragraph_start=len(before),missing_value=missing_value,persistent=True)
+    refused(e)
+    assert e.copy_values==[None,outlook_text,missing_value,missing_value]
+    assert [keys for keys in e.events if keys in ((k.SHIFT,k.RIGHT),(k.SHIFT,k.LEFT))]==[(k.SHIFT,k.RIGHT)]
+
+# Input changes during start normalization stop before the following copy/key.
+e=InvisibleLeadingBoundary(before+outlook_text,len(before)+5,paragraph_start=len(before))
+def cancel_start_normalization(editor,keys):
+    if keys==(k.SHIFT,k.RIGHT) and editor.events.count(keys)==2:
+        editor.revision+=1
+e.after_chord=cancel_start_normalization;refused(e)
+assert e.events[-1]==(k.SHIFT,k.RIGHT)
+assert len(e.copy_values)==4
+
+print('Paragraph direction: HWP advancing-Right regression, hidden-leading-boundary normalization, bounded exact-source probes, restoration, CRLF boundaries, user selections and no mouse input: PASS')

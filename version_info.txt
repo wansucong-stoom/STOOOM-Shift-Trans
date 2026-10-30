@@ -8,6 +8,6 @@ VSVersionInfo(
     StringStruct('InternalName', 'STOOMShiftTranslator'),
     StringStruct('OriginalFilename', 'STOOMShiftTranslator.exe'),
     StringStruct('ProductName', 'STOOM Shift Translator'),
-    StringStruct('ProductVersion', '0.6.12 (20261030.8)')
+    StringStruct('ProductVersion', '0.6.12 (20261030.9)')
   ])]), VarFileInfo([VarStruct('Translation', [1042, 1200])])]
 )

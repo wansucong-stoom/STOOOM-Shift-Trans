@@ -21,7 +21,7 @@ import urllib.parse
 import urllib.request
 
 VERSION='0.6.12'
-BUILD='20261030.8'
+BUILD='20261030.9'
 REPOSITORY='wansucong-stoom/STOOOM-Shift-Trans'
 API_URL=f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
 MAX_INSTALLER_SIZE=300*1024*1024
