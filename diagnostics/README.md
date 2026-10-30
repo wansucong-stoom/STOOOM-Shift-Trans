@@ -1,10 +1,10 @@
-# 문단 선택 진단 v2
+# 문단 선택 진단 v3
 
-한글의 자동 문단 선택과 Outlook에서 번역한 문단이 앞 문단에 붙는 현상을 확인하는 도구입니다. v2는 복사한 글에 끝 줄바꿈이 없어도 선택 양 끝의 변화를 확인합니다. 정식 설치 파일은 MSI로 배포하며, 이 도구만 설치 없이 실행하는 별도 EXE입니다. 번역기 자체를 교체하거나 설치하지 않습니다.
+한글의 자동 문단 선택과 Outlook에서 번역한 문단이 앞 문단에 붙는 현상을 확인하는 도구입니다. v3는 v2의 양방향 경계 탐색을 유지하고, 두 방향 모두 복사 결과가 같았던 경우에 한 번 더 오른쪽으로 이동해 실제 첫 글자가 제외되는지 확인합니다. 정식 설치 파일은 MSI로 배포하며, 이 도구만 설치 없이 실행하는 별도 EXE입니다. 번역기 자체를 교체하거나 설치하지 않습니다.
 
 ## 사용자 시험
 
-1. 이전 진단 도구를 닫고 `STOOM-SST-Input-Diagnostic-v2.exe`를 실행합니다.
+1. 이전 진단 도구를 닫고 `STOOM-SST-Input-Diagnostic-v3.exe`를 실행합니다.
 2. Outlook에서 **보내지 않을 새 메일의 빈 본문**을 열고 아래 두 문장을 **Enter로 구분해 직접 입력**합니다. 이 시험에서는 Shift+Enter를 사용하지 않습니다.
 
    ```text
@@ -30,14 +30,16 @@ F8을 다른 프로그램이 먼저 등록했다면 도구에 안내가 표시�
 
 끝 줄바꿈이 없는 경우에는 Shift+Right와 Shift+Left로 선택 끝의 변화를 비교합니다. 복사 내용이 달라졌다면 반대 키로 원문 범위가 복원됐는지 확인하며, 복원되지 않으면 멈춥니다. 복사 내용이 같다고 해서 키가 아무 일도 하지 않았다고 단정하지 않습니다. 끝 줄바꿈이 있는 경우에는 v1의 확인을 유지하고, 첫 재선택 결과가 원문과 같을 때만 왼쪽으로 한 단계 더 이동하는 후보를 한 번 확인합니다. 어느 경로도 번역문을 입력하거나 붙여넣지 않습니다.
 
+양방향 탐색 모두 복사문이 같았던 경우에만 Shift+Right로 같은 범위에 다시 진입하고, 한 번 더 Shift+Right를 보냅니다. 그 결과가 원문 앞부분만 제외한 비어 있지 않은 뒷부분이며 Shift+Left 한 번으로 원문이 정확히 복원될 때만 `boundary_character_start_confirmed`를 참으로 기록합니다. 두 번째 복사도 같으면 성공으로 추정하거나 역키를 무조건 보내지 않습니다. 이 단계 역시 선택만 바꾸며 본문을 수정하지 않습니다.
+
 ## 빌드와 검증
 
 릴리즈 소스 루트에서 PowerShell로 실행합니다. 기존 개발용 Python 3.11과 requirements 설치 환경을 사용합니다.
 
 ```powershell
 $probeRoot = (Get-Location).Path
-python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --icon "$probeRoot\stoom.ico" --add-data "$probeRoot\stoom.ico;." --add-data "$probeRoot\branding\sst\icon-48.png;branding/sst" --name STOOM-SST-Input-Diagnostic-v2 --distpath dist/diagnostics --workpath build/paragraph-probe-v2 --specpath work diagnostics/paragraph_probe.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --icon "$probeRoot\stoom.ico" --add-data "$probeRoot\stoom.ico;." --add-data "$probeRoot\branding\sst\icon-48.png;branding/sst" --name STOOM-SST-Input-Diagnostic-v3 --distpath dist/diagnostics --workpath build/paragraph-probe-v3 --specpath work diagnostics/paragraph_probe.py
 python diagnostics/paragraph_probe.py --self-test
 ```
 
-v2 소스의 자체 시험은 고정된 메모리 예문으로 한글에서 관찰된 추가 이동, 끝 줄바꿈이 없는 범위의 양방향 탐색, 원문 관계 메타데이터, 중단과 클립보드 복원 경로를 확인합니다. 이 시험은 Windows 키 입력이나 실제 클립보드 내용을 사용하지 않습니다. v2 동결 EXE의 자체 시험·보조 프로세스 연결은 빌드 후 별도 확인하며, 실제 Outlook·한글 편집기 결과는 사용자 시험 대상입니다.
+v3 소스의 자체 시험은 고정된 메모리 예문으로 평문에 나타나지 않는 앞 문단 경계, 두 번째 오른쪽 이동의 첫 글자 제외, 문서 끝/변화 없는 키 처리, 한글에서 관찰된 추가 이동, 원문 관계 메타데이터, 중단과 클립보드 복원 경로를 확인합니다. 이 시험은 Windows 키 입력이나 실제 클립보드 내용을 사용하지 않습니다. v3 동결 EXE의 자체 시험·보조 프로세스 연결은 빌드 후 별도 확인하며, 실제 Outlook·한글 편집기 결과는 사용자 시험 대상입니다.

@@ -7,7 +7,7 @@
 
 쓰던 자리에서 바로 번역하세요. Windows 입력창에서 **Shift 두 번 또는 Ctrl 두 번**으로 선택한 문장을 번역해 교체합니다. 언어팩을 설치하면 인터넷 없이 사용할 수 있습니다.
 
-**0.6.12 · 빌드 20261030.8**
+**0.6.12 · 빌드 20261030.9**
 
 [MSI 설치 파일 다운로드](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.12/STOOM-Translator-v0612-TSF-setup.msi) · [릴리즈](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/latest)
 

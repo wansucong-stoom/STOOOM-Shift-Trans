@@ -24,7 +24,7 @@ import clipboard_process
 import focus_guard
 import keyboard_access as keyboard
 
-VERSION = 'paragraph-probe-2'
+VERSION = 'paragraph-probe-3'
 REPORT_NAME = 'paragraph-probe.json'
 COPY = (keyboard.CTRL, ord('C'))
 ALLOWED_KEYS = frozenset((COPY, (keyboard.CTRL, keyboard.DOWN),
@@ -133,6 +133,7 @@ def run_probe(env, lease_factory, guard):
             report['status'] = 'source_too_large'
             return report
         if trim_boundary(baseline) == baseline:
+            report['boundary_character_start_confirmed'] = False
             # A rich editor can include a structural paragraph edge in its
             # selection without serializing that edge into plain copied text.
             # Probe both directions and record only their relation to baseline.
@@ -156,6 +157,30 @@ def run_probe(env, lease_factory, guard):
                     return report
             else:
                 report['left_probe_copy_unchanged'] = True
+            if right_probe == baseline and left_probe == baseline:
+                # Outlook v2 copied the same text on both sides of a possible
+                # invisible leading paragraph edge. Re-enter that edge, then
+                # require real leading-character removal before identifying a
+                # character-only start. Equal copies alone prove no such thing.
+                press((keyboard.SHIFT, keyboard.RIGHT))
+                if copied('boundary_right_reentry') != baseline:
+                    report['status'] = 'boundary_reentry_mismatch'
+                    return report
+                press((keyboard.SHIFT, keyboard.RIGHT))
+                second_right = copied('boundary_second_right_probe')
+                if second_right != baseline:
+                    press((keyboard.SHIFT, keyboard.LEFT))
+                    if copied('boundary_second_left_restore') != baseline:
+                        report['status'] = 'restore_mismatch'
+                        return report
+                    report['boundary_character_start_confirmed'] = (
+                        isinstance(second_right, str) and bool(second_right)
+                        and len(second_right) < len(baseline)
+                        and baseline.endswith(second_right))
+                else:
+                    # A second equal copy remains ambiguous. Do not invent an
+                    # inverse step which could remove real text from the block.
+                    report['second_right_probe_copy_unchanged'] = True
             report['status'] = 'boundary_probes_completed'
             return report
 
@@ -270,7 +295,7 @@ def main():
     from tkinter import ttk
 
     root = tk.Tk()
-    root.title('STOOM SST · 문단 선택 진단 v2')
+    root.title('STOOM SST · 문단 선택 진단 v3')
     root.geometry('640x550')
     root.configure(bg='#ffffff')
     root.minsize(600, 530)
@@ -284,7 +309,7 @@ def main():
     if logo.is_file():
         root.brand_image = tk.PhotoImage(file=str(logo))
         tk.Label(header, image=root.brand_image, bg='#071019').pack(side='left', padx=(0, 12))
-    tk.Label(header, text='SST  문단 선택 진단 v2', bg='#071019', fg='#e3faff',
+    tk.Label(header, text='SST  문단 선택 진단 v3', bg='#071019', fg='#e3faff',
              font=('맑은 고딕', 17, 'bold')).pack(side='left')
     body = tk.Frame(root, bg='white', padx=24, pady=20)
     body.pack(fill='both', expand=True)
@@ -496,6 +521,8 @@ def self_test():
             assert report['right_probe_copy_unchanged']
             assert 'boundary_shift_left_restore' not in stages
             assert stages['boundary_shift_left_probe']['removed_suffix']
+            assert 'boundary_second_right_probe' not in stages
+            assert not report['boundary_character_start_confirmed']
         else:
             assert stages['boundary_shift_right_probe']['removed_prefix']
             assert stages['boundary_shift_left_probe']['added_prefix']
@@ -503,6 +530,49 @@ def self_test():
         serialized = json.dumps(report)
         assert 'PRIVATE_FIXED_SOURCE_921' not in serialized and 'PREFIX' not in serialized
         assert all(keys in ALLOWED_KEYS for keys in env.events)
+
+    # Outlook's selected leading paragraph boundary can be omitted from copied
+    # plain text. R/L both preserve the source; the second R removes its first
+    # character, and one L returns to the character start without that boundary.
+    class HiddenLeadingBreak(Fake):
+        def __init__(self):
+            super().__init__()
+            self.text = 'PREFIX\r\nPRIVATE_FIXED_SOURCE_921'
+            self.active = self.anchor_pos = len(self.text)
+        def chord(self, *keys):
+            super().chord(*keys)
+            if keys == (keyboard.CTRL, keyboard.SHIFT, keyboard.UP):
+                self.active -= 2
+            if keys == COPY and self.lease.text and self.lease.text.startswith('\r\n'):
+                self.lease.text = self.lease.text[2:]
+    env = HiddenLeadingBreak(); lease = FakeLease(env); original = env.text
+    report = run_probe(env, lambda: lease, lambda: None)
+    assert report['status'] == 'boundary_probes_completed'
+    assert report['boundary_character_start_confirmed'] and lease.restored and env.text == original
+    stages = {item['stage']: item for item in report['stages']}
+    assert stages['boundary_shift_right_probe']['equals_baseline']
+    assert stages['boundary_shift_left_probe']['equals_baseline']
+    assert stages['boundary_right_reentry']['equals_baseline']
+    assert stages['boundary_second_right_probe']['removed_prefix']
+    assert stages['boundary_second_left_restore']['equals_baseline']
+    assert 'PRIVATE_FIXED_SOURCE_921' not in json.dumps(report)
+
+    # Unchanged probes may instead be genuine no-ops. No character-start proof
+    # or extra inverse key is allowed when the second Right is also unchanged.
+    class NoOpEdges(Fake):
+        def chord(self, *keys):
+            if keys in ((keyboard.SHIFT, keyboard.RIGHT), (keyboard.SHIFT, keyboard.LEFT)):
+                self.events.append(keys)
+            else:
+                super().chord(*keys)
+    env = NoOpEdges(); env.text = 'PRIVATE_FIXED_SOURCE_921'
+    env.anchor_pos = 0; env.active = len(env.text)
+    lease = FakeLease(env); original = env.text
+    report = run_probe(env, lambda: lease, lambda: None)
+    assert report['status'] == 'boundary_probes_completed'
+    assert report['second_right_probe_copy_unchanged'] and not report['boundary_character_start_confirmed']
+    assert env.events.count((keyboard.SHIFT, keyboard.LEFT)) == 1
+    assert env.text == original and lease.restored
 
     # Metadata describes relationships and boundaries only, never the actual
     # added/removed characters. CRLF counts as two copied boundary characters.
@@ -534,7 +604,7 @@ def self_test():
             raise ProbeStopped()
     stopped = run_probe(env, lambda: lease, abort)
     assert stopped['status'] == 'aborted' and stopped['clipboard_restored'] and env.text == original
-    print('Paragraph probe v2 self-test: fixed fixtures only; HWP extra step, no-terminal boundary probes, relationship metadata, no document writes, clipboard cleanup and abort: PASS')
+    print('Paragraph probe v3 self-test: fixed fixtures only; hidden leading edge, second-Right character proof, EOD/no-op handling, HWP extra step, source privacy, no document writes, cleanup and abort: PASS')
 
 
 if __name__ == '__main__':
