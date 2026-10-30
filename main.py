@@ -51,6 +51,7 @@ _INPUT_ERROR_MESSAGES=frozenset((
  '입력창의 포커스가 바뀌어 번역을 취소했습니다.','새 키보드 입력이나 클릭·스크롤이 감지되어 번역을 취소했습니다.',
  '단축키에서 손을 뗀 뒤 다시 시도하세요.','조합 확정용 공백의 추가를 확인하지 못했습니다. 입력창을 확인하세요.',
  '조합 확정용 공백을 확인하지 못했습니다. 입력창을 확인하세요.','선택·복사할 글이 없습니다. 글을 선택한 뒤 다시 시도하세요.',
+ '선택할 글이 없습니다. 줄 끝에 커서를 놓거나 원하는 문장을 드래그한 뒤 다시 시도해 주세요.',
  '번역할 글이 없습니다.','문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.',
  '선택한 텍스트가 너무 길거나 텍스트 이외의 개체가 포함되어 있습니다.','복사된 원문이 바뀌어 번역을 취소했습니다.',
  '번역 결과가 비어 있거나 너무 깁니다.','새 키보드 입력이 있어 교체를 취소했습니다.',
@@ -361,7 +362,7 @@ class App(QWidget):
    row=QHBoxLayout(); label=QLabel(name); label.setMinimumWidth(190); row.addWidget(label); box=QComboBox(); box.addItems(['사용 안 함','한국어','영어','일본어']); row.addWidget(box); settings.addLayout(row); self.target[key]=box
   self.target['shift'].setCurrentText('영어')
   row=QHBoxLayout(); row.addWidget(QLabel('원문 언어')); self.source=QComboBox(); self.source.addItems(['자동','한국어','영어','일본어']); row.addWidget(self.source); settings.addLayout(row); settings.addSpacing(15)
-  info=QLabel('두 키는 각각 다른 언어로 설정하거나 끌 수 있습니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
+  info=QLabel('선택한 글을 번역합니다. 선택이 없으면 현재 커서부터 줄 시작까지만 번역합니다.\n두 키는 각각 다른 언어로 설정하거나 끌 수 있습니다.'); info.setStyleSheet('color:#7d8791;'); info.setWordWrap(True); settings.addWidget(info); self.engine_readiness=QLabel('번역 엔진 준비 중…'); self.engine_readiness.setStyleSheet('color:#7d8791;'); self.engine_readiness.setWordWrap(True); settings.addWidget(self.engine_readiness); settings.addStretch()
   self.input_readiness=QLabel('Windows 입력 지원 확인 중…'); self.input_readiness.setWordWrap(True); self.input_readiness.setStyleSheet('color:#7d8791;'); settings.addWidget(self.input_readiness)
   packs=page('언어팩 관리','OPUS-MT Big는 방향별 별도 모델입니다. 한국어↔영어는 두 방향을 각각 설치하세요. 설치 후에는 오프라인으로 번역합니다.')
   self.checks={}; self.pack_select={}

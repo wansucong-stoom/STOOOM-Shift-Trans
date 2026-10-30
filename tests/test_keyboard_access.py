@@ -22,7 +22,7 @@ class Env:
         self.text=text;self.selection=selection;self.caret=len(text);self.revision=7
         self.focus=object();self.owner_pids=(12,);self.clock=0.;self.focused=True
         self.events=[];self.leases=[];self.current_lease=None;self.security=True
-        self.after_copy=None;self.fail_space=False;self.pasted=0;self.selected=0;self.include_marker=False
+        self.after_copy=None;self.fail_space=False;self.pasted=0;self.selected=0
     def activity(self):return self.revision,self.clock
     def current(self):return self.focused
     def modifiers(self):return False
@@ -47,6 +47,9 @@ class Env:
             if self.selection:
                 start,end=self.selection;self.selection=(start,max(start,end-1));self.caret=end-1
             else:self.selection=(max(0,self.caret-1),self.caret)
+        elif keys==(k.SHIFT,k.HOME):
+            start=self.text.rfind('\n',0,self.caret)+1
+            self.selection=(start,self.caret)
         elif keys==(0x08,):
             assert self.selection
             start,end=self.selection;assert self.text[start:end]==' '
@@ -58,12 +61,8 @@ class Env:
             self.caret=start+len(replacement);self.selection=None;self.pasted+=1
         else:raise AssertionError(('unexpected shortcut',keys))
     def select(self,guard,pause):
-        guard();self.selected+=1
-        start=self.text.rfind('\n',0,self.caret)+1
-        end=self.text.find('\n',self.caret)
-        if end<0:end=len(self.text)
-        elif self.include_marker:end+=1
-        self.selection=(start,end);self.caret=end;pause(.075)
+        self.selected+=1
+        return k.Windows.select(self,guard,pause)
 
 
 def raises(kind,call):
@@ -82,7 +81,7 @@ d.apply(s,'Hello 😀')
 assert e.text=='앞 Hello 😀 뒤' and e.caret==len('앞 Hello 😀') and e.pasted==1
 assert e.leases[0].restored and e.leases[-1].kept and not e.leases[-1].restored
 
-# A collapsed caret selects its paragraph without changing source text.
+# A collapsed caret selects this line's prefix without changing source text.
 # No temporary whitespace, Backspace, cut or full-document select is sent.
 e=Env('보존할 첫 문단\n저는 누구일까요?');d=k.Driver(e,e.factory)
 s=d.capture(7)
@@ -93,9 +92,8 @@ d.apply(s,'Who am I?')
 assert e.text=='보존할 첫 문단\nWho am I?' and e.pasted==1
 assert (k.CTRL,ord('X')) not in e.events and (k.CTRL,ord('A')) not in e.events
 
-# A paragraph mark selected by a triple click must remain in the original
-# document so its paragraph-level formatting is not replaced by paste.
-e=Env('앞 문단\n번역 문단\n뒤 문단');e.caret=len('앞 문단\n번역 문단');e.include_marker=True
+# The line-only selection leaves adjacent paragraph marks outside its range.
+e=Env('앞 문단\n번역 문단\n뒤 문단');e.caret=len('앞 문단\n번역 문단')
 d=k.Driver(e,e.factory);s=d.capture(7)
 assert s.text=='번역 문단' and e.text=='앞 문단\n번역 문단\n뒤 문단'
 d.apply(s,'Translated paragraph')
@@ -116,18 +114,18 @@ e.caret=2
 d.apply(s,'new')
 assert e.text=='new' and e.pasted==1
 
-# If the space cannot be proved, Backspace is never sent to the source.
+# Compatibility callers cannot activate temporary Space/Backspace edits.
 e=Env('원문');e.fail_space=True;d=k.Driver(e,e.factory)
-raises(k.KeyboardError,lambda:d.capture(7,commit_space=True))
-assert e.text=='원문' and (0x08,) not in e.events and all(x.restored for x in e.leases)
+assert d.capture(7,commit_space=True).text=='원문'
+assert e.text=='원문' and (0x20,) not in e.events and (0x08,) not in e.events and all(x.restored for x in e.leases)
 
-# An already present trailing space is not proof that our Space was inserted.
+# An existing trailing space belongs to the source and is retained exactly.
 e=Env('원문 ');e.fail_space=True;d=k.Driver(e,e.factory)
-raises(k.KeyboardError,lambda:d.capture(7,commit_space=True))
-assert e.text=='원문 ' and (0x08,) not in e.events
+assert d.capture(7,commit_space=True).text=='원문 '
+assert e.text=='원문 ' and (0x20,) not in e.events and (0x08,) not in e.events
 
 # Rich editors may not publish whitespace-only selections to the clipboard.
-# That host limitation must not prevent the default paragraph path.
+# That host limitation must not prevent the default current-line path.
 class WhitespaceHost(Env):
     def chord(self,*keys):
         super().chord(*keys)
@@ -184,4 +182,4 @@ def broken_report(*args,**details):raise OSError('disk unavailable')
 e=Env('원문',(0,2));d=k.Driver(e,e.factory,report=broken_report)
 d.apply(d.capture(7),'Translated')
 assert e.text=='Translated' and e.pasted==1
-print('Common keyboard path: source-preserving paragraph selection, hosts without whitespace-only copy, optional legacy space check, one paste, Unicode and stale-input rejection: PASS')
+print('Common keyboard path: current-line selection, exact source, no temporary whitespace, one paste, Unicode and stale-input rejection: PASS')

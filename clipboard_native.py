@@ -222,6 +222,9 @@ class ClipboardState(common.ClipboardLease):
    if owner and pid.value not in owner_pids:raise RuntimeError('다른 프로그램이 클립보드를 변경해 번역을 중단했습니다.')
    accepted=True;self.ours=seq
    if not win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
+    # A focused editor may clear the clipboard when nothing is selected.
+    # Distinguish a completed empty copy from a helper/ownership failure.
+    if win32clipboard.CountClipboardFormats()==0:return ''
     raise ValueError('선택한 영역에 복사할 텍스트가 없습니다.')
    return win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
   finally:

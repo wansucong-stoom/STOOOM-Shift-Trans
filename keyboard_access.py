@@ -40,12 +40,11 @@ class Snapshot:
     selected_automatically: bool
 
 
-def select_paragraph(env,guard,pause):
-    # Common paragraph navigation for no-caret hosts and a click that selected
-    # no usable text. Do not guess with line/paragraph-specific alternatives.
-    guard();env.chord(CTRL,DOWN);pause(.025)
-    guard();env.chord(CTRL,SHIFT,UP);pause(.025)
-    return 'backward'
+def select_current_line(env,guard,pause):
+    # Select only the text before the caret on this display line. Never move
+    # to another line/paragraph first or expand after an empty selection.
+    guard();env.chord(SHIFT,HOME);pause(.025)
+    return 'current_line'
 
 
 class Windows:
@@ -152,9 +151,7 @@ class Windows:
             value=INPUT();value.kind=0;value.mouse=MOUSEINPUT(0,0,0,flag,0,INPUT_TAG);events.append(value)
         self._send(events)
     def select(self,guard,pause):
-        # A caret coordinate can overlap a table/object handle. Default input
-        # must never turn paragraph selection into an object double click.
-        return select_paragraph(self,guard,pause)
+        return select_current_line(self,guard,pause)
     def select_by_click(self,guard,pause):
         """Explicit diagnostic helper; the application route never calls it."""
         point=self.caret_point()
@@ -180,7 +177,7 @@ class Windows:
             # Click selection orientation belongs to the host editor.
             return 'unknown'
         else:
-            return select_paragraph(self,guard,pause)
+            raise KeyboardError('텍스트 입력 위치를 확인하지 못했습니다.')
 
 
 class Driver:
@@ -220,38 +217,6 @@ class Driver:
                 self.record('copy_timeout',cause='clipboard')
                 return None
             self.pause(.01,revision)
-    def normalize_paragraph_start(self,text,lease,revision):
-        # Some rich editors include an adjacent paragraph boundary in an
-        # automatic block, but omit it from CF_UNICODETEXT. Replacing that
-        # block can merge paragraphs despite an exact plain-text match.
-        message='문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.'
-        def step(key):
-            self.guard(revision);self.env.chord(SHIFT,key);self.pause(.025,revision)
-            copied=self.copy(lease,revision)
-            # Missing copy data is not evidence that a selected endpoint
-            # moved. Retry the copy without another navigation key; otherwise
-            # an inverse key could put the hidden boundary back into the block.
-            if not copied:copied=self.copy(lease,revision)
-            if not copied:raise KeyboardError(message)
-            return copied
-        self.record('paragraph_start_probe')
-        if step(RIGHT)!=text:
-            if step(LEFT)!=text:raise KeyboardError(message)
-            return
-        if step(LEFT)!=text:
-            if step(RIGHT)!=text:raise KeyboardError(message)
-            return
-        # Both directions retained identical copied text in the Outlook
-        # diagnostic. That alone is not proof of a no-op or of direction.
-        # Cross the invisible edge, then prove a visible prefix was removed.
-        self.record('paragraph_start_hidden_edge')
-        if step(RIGHT)!=text:raise KeyboardError(message)
-        shorter=step(RIGHT)
-        if not shorter or len(shorter)>=len(text) or not text.endswith(shorter):
-            self.record('paragraph_start_unconfirmed')
-            raise KeyboardError(message)
-        if step(LEFT)!=text:raise KeyboardError(message)
-        self.record('paragraph_start_confirmed',source_chars=len(text))
     def capture(self,revision,commit_space=False):
         self.record('capture_started',revision=revision)
         self.guard(revision);self.env.safe()
@@ -263,101 +228,18 @@ class Driver:
         try:
             text=self.copy(lease,revision)
             automatic=text is None or not text
-            strategy=None
             if automatic:
                 self.record('selection_started')
-                before_space=self.env.anchor()
-                if commit_space and before_space is not None:
-                    self.guard(revision);self.env.chord(0x20);self.pause(.025,revision)
-                    if self.env.anchor()==before_space:
-                        raise KeyboardError('조합 확정용 공백의 추가를 확인하지 못했습니다. 입력창을 확인하세요.')
-                    self.env.chord(SHIFT,LEFT);self.pause(.025,revision)
-                    space=self.copy(lease,revision)
-                    if space!=' ':
-                        raise KeyboardError('조합 확정용 공백을 확인하지 못했습니다. 입력창을 확인하세요.')
-                    self.guard(revision);self.env.chord(0x08);self.pause(.025,revision)
-                strategy=self.env.select(lambda:self.guard(revision),lambda s:self.pause(s,revision))
+                # commit_space remains a compatible call argument; capture
+                # never inserts/removes text or tries another selection route.
+                self.env.select(lambda:self.guard(revision),lambda s:self.pause(s,revision))
                 self.record('selection_sent')
-                self.record('selection_backward' if strategy=='backward' else 'selection_direction_unknown')
+                self.record('selection_current_line')
                 text=self.copy(lease,revision)
-                if strategy=='unknown' and (not text or not text.strip()):
-                    self.record('selection_keyboard_fallback')
-                    # A copied whitespace range is an actual selection; collapse
-                    # it first. A timeout/empty copy does not prove a selection,
-                    # so Left could otherwise move into a previous paragraph.
-                    if text:
-                        self.guard(revision);self.env.chord(LEFT)
-                    strategy=select_paragraph(self.env,lambda:self.guard(revision),lambda s:self.pause(s,revision))
-                    self.record('selection_backward')
-                    text=self.copy(lease,revision)
-            if not text or not text.strip():raise KeyboardError('선택·복사할 글이 없습니다. 글을 선택한 뒤 다시 시도하세요.')
-            # Preserve the destination paragraph's existing formatting by
-            # leaving a selected trailing paragraph break in the document.
-            # A selected edge moves differently in some editors: only proceed
-            # if an actual second copy proves exactly the intended shrink.
-            if text.endswith(('\r','\n','\u2028','\u2029')):
-                without_break=text[:-2] if text.endswith('\r\n') else text[:-1]
-                if not without_break.strip():raise KeyboardError('번역할 글이 없습니다.')
-                # Hosts can expose a forward block even after Ctrl+Shift+Up.
-                # Try the working manual-selection path before assuming which
-                # endpoint is active. Any later navigation candidate must copy
-                # exactly this original text without its final delimiter.
-                self.record('paragraph_trim_started')
-                self.guard(revision);self.env.chord(SHIFT,LEFT);self.pause(.025,revision)
-                shrunk=self.copy(lease,revision)
-                if shrunk!=without_break:
-                    # Reverse only a probe that actually changed the selection.
-                    # At document start Shift+Left can be a no-op.
-                    if shrunk!=text:
-                        self.guard(revision);self.env.chord(SHIFT,RIGHT);self.pause(.025,revision)
-                        if self.copy(lease,revision)!=text:
-                            self.record('paragraph_restore_failed')
-                            raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
-                    if not (automatic and strategy=='backward'):
-                        raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
-                    self.record('paragraph_end_reselect_started')
-                    # Collapse to the copied end, step over exactly one
-                    # boundary (CRLF is one caret step), and select backward.
-                    # A synthetic clipboard newline or unexpected key behavior
-                    # cannot silently drop a character: recopy must match.
-                    for keys in ((RIGHT,),(LEFT,),(CTRL,SHIFT,UP)):
-                        self.guard(revision);self.env.chord(*keys);self.pause(.025,revision)
-                    shrunk=self.copy(lease,revision)
-                    if shrunk==text:
-                        # The user-run HWP probe returned the identical range:
-                        # Right collapsed the block, but the preceding caret
-                        # unit was a visible character rather than the CRLF.
-                        # Some hosts collapse AND advance on Right. From this
-                        # confirmed baseline only, try one additional Left.
-                        # Never infer success from counts or retry a mismatch.
-                        self.record('paragraph_collapse_advance_retry')
-                        for keys in ((RIGHT,),(LEFT,),(LEFT,),(CTRL,SHIFT,UP)):
-                            self.guard(revision);self.env.chord(*keys);self.pause(.025,revision)
-                        shrunk=self.copy(lease,revision)
-                        if shrunk==without_break:
-                            self.record('paragraph_collapse_advance_confirmed',source_chars=len(shrunk))
-                    if shrunk and shrunk!=without_break and shrunk!=text:
-                        # Some editors clear the selection at its active/start
-                        # endpoint before moving Right. The old end-based path
-                        # then selects the PREVIOUS paragraph. Try one bounded
-                        # forward candidate; never use that other paragraph as
-                        # source, and never accept counts or partial matches.
-                        # From its active start, two paragraph moves reach the
-                        # original paragraph's end. Hosts with different rules
-                        # must still prove the exact original-minus-delimiter.
-                        self.record('paragraph_active_start_retry')
-                        for keys in ((CTRL,DOWN),(CTRL,DOWN),(LEFT,),(CTRL,SHIFT,UP)):
-                            self.guard(revision);self.env.chord(*keys);self.pause(.025,revision)
-                        shrunk=self.copy(lease,revision)
-                        if shrunk==without_break:
-                            self.record('paragraph_active_start_confirmed',source_chars=len(shrunk))
-                    if shrunk!=without_break:
-                        self.record('paragraph_end_reselect_failed',source_chars=len(shrunk) if shrunk is not None else 0)
-                        raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')
-                self.record('paragraph_trim_confirmed',source_chars=len(shrunk))
-                text=shrunk
-            elif automatic and strategy=='backward':
-                self.normalize_paragraph_start(text,lease,revision)
+            if not text or not text.strip():raise KeyboardError('선택할 글이 없습니다. 줄 끝에 커서를 놓거나 원하는 문장을 드래그한 뒤 다시 시도해 주세요.')
+            # A manual selection is exact, including its line separators. Do
+            # not probe/shrink/reselect its endpoints. The line-only automatic
+            # path also keeps precisely the host's Shift+Home selection.
             if len(text.encode('utf-16-le'))//2>MAX_SOURCE or '\0' in text or '\ufffc' in text:
                 raise KeyboardError('선택한 텍스트가 너무 길거나 텍스트 이외의 개체가 포함되어 있습니다.')
             # Two actual copies, not a provider's cached range/value.

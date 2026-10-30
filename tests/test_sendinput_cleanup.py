@@ -39,7 +39,7 @@ def instance(counts):
     return native
 
 
-for keys in ((k.CTRL,ord('V')),(k.CTRL,k.SHIFT,k.UP)):
+for keys in ((k.CTRL,ord('V')),(k.SHIFT,k.HOME),(k.CTRL,k.SHIFT,k.UP)):
     total=len(keys)*2
     for accepted in range(total+1):
         native=instance([accepted])
