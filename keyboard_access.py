@@ -300,8 +300,8 @@ class Driver:
                 if not without_break.strip():raise KeyboardError('번역할 글이 없습니다.')
                 # Hosts can expose a forward block even after Ctrl+Shift+Up.
                 # Try the working manual-selection path before assuming which
-                # endpoint is active. Never collapse/reselect using Down: logs
-                # showed a complete paragraph becoming only its delimiter.
+                # endpoint is active. Any later navigation candidate must copy
+                # exactly this original text without its final delimiter.
                 self.record('paragraph_trim_started')
                 self.guard(revision);self.env.chord(SHIFT,LEFT);self.pause(.025,revision)
                 shrunk=self.copy(lease,revision)
@@ -336,6 +336,21 @@ class Driver:
                         shrunk=self.copy(lease,revision)
                         if shrunk==without_break:
                             self.record('paragraph_collapse_advance_confirmed',source_chars=len(shrunk))
+                    if shrunk and shrunk!=without_break and shrunk!=text:
+                        # Some editors clear the selection at its active/start
+                        # endpoint before moving Right. The old end-based path
+                        # then selects the PREVIOUS paragraph. Try one bounded
+                        # forward candidate; never use that other paragraph as
+                        # source, and never accept counts or partial matches.
+                        # From its active start, two paragraph moves reach the
+                        # original paragraph's end. Hosts with different rules
+                        # must still prove the exact original-minus-delimiter.
+                        self.record('paragraph_active_start_retry')
+                        for keys in ((CTRL,DOWN),(CTRL,DOWN),(LEFT,),(CTRL,SHIFT,UP)):
+                            self.guard(revision);self.env.chord(*keys);self.pause(.025,revision)
+                        shrunk=self.copy(lease,revision)
+                        if shrunk==without_break:
+                            self.record('paragraph_active_start_confirmed',source_chars=len(shrunk))
                     if shrunk!=without_break:
                         self.record('paragraph_end_reselect_failed',source_chars=len(shrunk) if shrunk is not None else 0)
                         raise KeyboardError('문단을 자동으로 인식하지 못했습니다. 원하는 문장을 드래그해 직접 선택한 뒤 다시 시도해 주세요.')

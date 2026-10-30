@@ -34,7 +34,7 @@ def build_database(version, payload, output):
     assert not output.exists(), 'Use a new output filename; never replace a published MSI.'
     output.parent.mkdir(parents=True, exist_ok=True)
     product = guid('product:' + version)
-    db = msilib.init_database(str(output), schema, 'STOOM Shift Translator (MSI)',
+    db = msilib.init_database(str(output), schema, 'STOOM Shift Translator',
                              product, version, 'STOOM')
     codepage=output.with_suffix('.codepage.idt')
     codepage.write_bytes(b'\r\n\r\n949\t_ForceCodepage\r\n')
@@ -81,7 +81,7 @@ def build_database(version, payload, output):
     view.Execute(None); view.Close()
     msilib.add_data(db, 'LaunchCondition', [
         ('VersionNT64 >= 603', '64비트 Windows가 필요합니다.'),
-        ('NOT NEWERPRODUCTS', '더 새로운 STOOM Shift Translator MSI가 이미 설치되어 있습니다.'),
+        ('NOT NEWERPRODUCTS', '더 새로운 STOOM Shift Translator가 이미 설치되어 있습니다.'),
     ])
     msilib.add_data(db, 'Directory', [
         ('TARGETDIR', None, 'SourceDir'), ('LocalAppDataFolder', 'TARGETDIR', '.'),
@@ -129,9 +129,9 @@ def build_database(version, payload, output):
     assert main_component
     msilib.add_data(db, 'Icon', [('SST.ico', msilib.Binary(str(ROOT/'stoom.ico')))])
     msilib.add_data(db, 'Shortcut', [
-        ('StartSST', 'ProgramMenuFolder', 'SSTMSI|STOOM Shift Translator MSI', main_component,
+        ('StartSST', 'ProgramMenuFolder', 'SSTMSI|STOOM Shift Translator', main_component,
          '[INSTALLDIR]STOOMShiftTranslator.exe', None, 'STOOM Shift Translator', None, 'SST.ico', 0, 1, 'INSTALLDIR'),
-        ('DesktopSST', 'DesktopFolder', 'SSTMSI|STOOM Shift Translator MSI', main_component,
+        ('DesktopSST', 'DesktopFolder', 'SSTMSI|STOOM Shift Translator', main_component,
          '[INSTALLDIR]STOOMShiftTranslator.exe', None, 'STOOM Shift Translator', None, 'SST.ico', 0, 1, 'INSTALLDIR'),
     ])
     # Windows Installer 5 shortcut property table is absent in Python's older schema.
@@ -161,7 +161,7 @@ def build_database(version, payload, output):
     welcome.pushbutton('Install',218,243,65,18,3,'설치','Cancel').event('EndDialog','Return')
     welcome.pushbutton('Cancel',290,243,65,18,3,'취소','Install').event('EndDialog','Exit')
     msilib.add_data(db,'InstallUISequence',[('WelcomeSST','NOT Installed',1290)])
-    for name,message in (('ExitDialog','작업이 완료되었습니다. 설치한 경우 시작 메뉴의 STOOM Shift Translator MSI를 실행해 주세요.'),
+    for name,message in (('ExitDialog','작업이 완료되었습니다. 설치한 경우 시작 메뉴의 STOOM Shift Translator를 실행해 주세요.'),
                          ('FatalError','설치를 완료하지 못했습니다. 실행 중인 번역기가 있다면 종료한 뒤 다시 시도해 주세요.'),
                          ('UserExit','설치를 취소했습니다.')):
         dlg=msilib.Dialog(db,name,50,50,370,270,3,'[ProductName]','Finish','Finish','Finish')
@@ -184,6 +184,8 @@ def build_database(version, payload, output):
     assert not query("SELECT `Value` FROM `Property` WHERE `Property` = 'ALLUSERS'")
     assert not query('SELECT `Action` FROM `CustomAction`')
     assert len(query('SELECT `Shortcut` FROM `Shortcut`')) == 2
+    assert query("SELECT `Value` FROM `Property` WHERE `Property` = 'ProductName'")==[['STOOM Shift Translator']]
+    assert query('SELECT `Name` FROM `Shortcut`')==[['SSTMSI|STOOM Shift Translator']]*2
     assert len(query('SELECT `UpgradeCode` FROM `Upgrade`')) == 2
     assert query("SELECT `Text` FROM `Control` WHERE `Dialog_` = 'WelcomeSST' AND `Control` = 'Install'")==[['설치']]
     assert query("SELECT `Value` FROM `Property` WHERE `Property` = 'ProductLanguage'")==[['1042']]

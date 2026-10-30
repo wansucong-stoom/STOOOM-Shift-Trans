@@ -102,6 +102,19 @@ class AdvancingRight(Editor):
             self.active=self.anchor_pos=self.following(end)
 
 
+class ActiveRight(Editor):
+    """Right clears the anchor and then moves from the active endpoint.
+
+    This differs from both collapse-to-end and collapse-to-end-plus-one. It
+    reproduces the shipped Pwh cursor methods without naming an app in routing.
+    """
+    def chord(self,*keys):
+        active=self.active
+        super().chord(*keys)
+        if keys==(k.RIGHT,):
+            self.active=self.anchor_pos=self.following(active)
+
+
 class InvisibleLeadingBoundary(Editor):
     """Model consistent with the Outlook diagnostic, not an internal API claim.
 
@@ -236,15 +249,15 @@ def unrelated_first_reselect(editor,keys):
 e.after_chord=unrelated_first_reselect;refused(e)
 assert e.events.count((k.RIGHT,))==1
 
-# The additional candidate is bounded and must itself match the exact source
-# without one delimiter. A second bad range cannot be accepted or retried.
+# Neither the advancing-Right candidate nor the later active-start recovery
+# may accept a range that differs from the exact source without one delimiter.
 e=AdvancingRight(probe_prefix+probe_text+probe_suffix,len(probe_prefix)+4)
 def wrong_second_reselect(editor,keys):
     if keys==(k.CTRL,k.SHIFT,k.UP) and editor.events.count(keys)==3:
         editor.active=editor.following(editor.active)
 e.after_chord=wrong_second_reselect;refused(e)
 assert e.events.count((k.RIGHT,))==2
-assert e.events.count((k.CTRL,k.SHIFT,k.UP))==3
+assert e.events.count((k.CTRL,k.SHIFT,k.UP))==4
 
 # Actual user input during the extra candidate stops before the next key. No
 # document mutation or paste is issued after the changed activity revision.
@@ -295,11 +308,54 @@ def damage_restore(editor,keys):
 e.after_chord=damage_restore;refused(e)
 assert (k.RIGHT,) not in e.events
 
-# A host that collapses Right to the wrong endpoint cannot lose source text.
+# A host that collapses Right to the active/start endpoint used to leave the
+# PREVIOUS paragraph selected. The bounded recovery must select the exact
+# intended paragraph and leave both neighbors and the delimiter untouched.
 e=Editor(original,len(prefix)+5)
 def wrong_collapse(editor,keys):
     if keys==(k.RIGHT,):editor.active=len(prefix);editor.anchor_pos=editor.active
-e.after_chord=wrong_collapse;refused(e)
+e.after_chord=wrong_collapse
+driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+assert snapshot.text==paragraph and e.bounds()==(len(prefix),len(prefix)+len(paragraph))
+driver.apply(snapshot,'Recovered paragraph.')
+assert e.text==prefix+'Recovered paragraph.'+suffix and e.pasted==1
+
+for delimiter in ('\n','\r\n'):
+    before='Previous paragraph must remain unchanged.'+delimiter
+    after=delimiter+'Next paragraph must remain unchanged.'+delimiter
+    for text in ('A wrapped paragraph with enough words to occupy multiple display lines.',
+                 '문단 선택을 시험합니다.','[향후]','가'):
+        for offset in (0,len(text)//2,len(text)):
+            e=ActiveRight(before+text+after,len(before)+offset)
+            records=[];driver=k.Driver(e,e.factory,lambda phase,**kw:records.append(phase))
+            snapshot=driver.capture(7)
+            assert snapshot.text==text and snapshot.selected_automatically
+            assert e.bounds()==(len(before),len(before)+len(text))
+            assert records.count('paragraph_active_start_retry')==1
+            assert records.count('paragraph_active_start_confirmed')==1
+            assert e.events.count((k.CTRL,k.DOWN))==3  # initial + bounded two
+            driver.apply(snapshot,'Replacement')
+            assert e.text==before+'Replacement'+after and e.pasted==1
+
+# Exact expected content, not a smaller range or a matching length, is needed.
+# A host that advances too far during recovery cannot translate a neighbor.
+e=ActiveRight(prefix+paragraph+suffix,len(prefix)+4)
+def recovery_too_far(editor,keys):
+    if keys==(k.CTRL,k.DOWN) and editor.events.count(keys)==3:
+        editor.active=editor.anchor_pos=editor.down(editor.active)
+e.after_chord=recovery_too_far;refused(e)
+assert e.events.count((k.CTRL,k.DOWN))==3
+
+# No recovery key after real user input or focus loss, including between the
+# two forward movements. The wrong paragraph is never sent to translation.
+for cause in ('typing','focus'):
+    e=ActiveRight(prefix+paragraph+suffix,len(prefix)+4)
+    def interrupt_recovery(editor,keys):
+        if keys==(k.CTRL,k.DOWN) and editor.events.count(keys)==2:
+            if cause=='typing':editor.revision+=1
+            else:editor.focused=False
+    e.after_chord=interrupt_recovery;refused(e)
+    assert e.events[-1]==(k.CTRL,k.DOWN) and e.events.count((k.CTRL,k.DOWN))==2
 
 # Copy-only trailing line breaks are not proof of a selected paragraph mark:
 # shrinking such a range must fail rather than silently drop its final letter.
@@ -492,4 +548,4 @@ e.after_chord=cancel_start_normalization;refused(e)
 assert e.events[-1]==(k.SHIFT,k.RIGHT)
 assert len(e.copy_values)==4
 
-print('Paragraph direction: HWP advancing-Right regression, hidden-leading-boundary normalization, bounded exact-source probes, restoration, CRLF boundaries, user selections and no mouse input: PASS')
+print('Paragraph direction: HWP advancing-Right, active-start recovery, hidden-leading-boundary normalization, bounded exact-source probes, restoration, CRLF boundaries, user selections and no mouse input: PASS')

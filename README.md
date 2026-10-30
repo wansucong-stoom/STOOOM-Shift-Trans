@@ -7,14 +7,14 @@
 
 쓰던 자리에서 바로 번역하세요. Windows 입력창에서 **Shift 두 번 또는 Ctrl 두 번**으로 선택한 문장을 번역해 교체합니다. 언어팩을 설치하면 인터넷 없이 사용할 수 있습니다.
 
-**0.6.12 · 빌드 20261030.9**
+**0.6.13 · 빌드 20261030.11**
 
-[MSI 설치 파일 다운로드](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.12/STOOM-Translator-v0612-TSF-setup.msi) · [릴리즈](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/latest)
+[MSI 설치 파일 다운로드](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.13/STOOM-Translator-v0613-TSF-setup.msi) · [릴리즈](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/latest)
 
 ## 시작하기
 
 1. Windows 10/11 x64에서 MSI를 설치합니다. Python은 필요하지 않습니다.
-2. 시작 메뉴에서 **STOOM Shift Translator MSI**를 실행하고, 트레이 아이콘으로 설정을 엽니다.
+2. 시작 메뉴의 **STOOM Shift Translator**를 실행합니다. 실행 중에는 바탕화면 바로가기나 트레이 아이콘으로 설정을 다시 열 수 있습니다.
 3. **언어팩 관리**에서 필요한 번역 방향과 모델을 선택해 다운로드합니다.
 4. **단축키 설정**에서 Shift 두 번과 Ctrl 두 번에 목표 언어를 각각 지정합니다. 사용하지 않는 단축키는 끌 수 있습니다.
 5. 번역할 문장을 선택하고 단축키를 누릅니다. 선택하지 않았다면 현재 문단의 자동 선택을 시도합니다.
@@ -44,10 +44,10 @@
 
 ## 사용 시 참고
 
-- 자동 문단 선택과 서식 유지 여부는 편집기에 따라 다를 수 있습니다. 한글 표 등 일부 위치는 추가 확인 중입니다.
+- 자동 문단 선택과 서식 유지 여부는 편집기에 따라 다를 수 있습니다. Pwh 표 셀의 마지막 문단은 원하는 문장을 직접 선택해 사용하세요.
 - 이름·직급·전문 용어의 번역은 확인 후 사용하세요.
 - 번역 후 클립보드에는 번역문이 남습니다.
 - 현재 설치 파일에는 코드 서명이 없어 Windows 보안 경고가 나타날 수 있습니다.
-- 이 수정 빌드의 실제 한글·Outlook 동작과 MSI 설치·업데이트 전체 과정은 사용자 확인 대상입니다.
+- 한글·Outlook에서 개선된 동작을 사용자 시험으로 확인했습니다. 모든 입력창·표에서의 동작을 보장하지는 않습니다.
 
 [변경 기록](CHANGELOG.md) · [검증 기록](KEYBOARD_TEST_RESULTS.md) · [설치·빌드 안내](MSI_INSTALL.md)

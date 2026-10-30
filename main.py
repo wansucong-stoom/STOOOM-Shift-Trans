@@ -313,7 +313,7 @@ class Tap:
 
 class App(QWidget):
  def __init__(self):
-  super().__init__(); self.setWindowTitle('STOOM Shift Translator — 설정'); self.resize(850,590); self.setMinimumSize(720,520)
+  super().__init__(); self.setWindowTitle(singleton.SETTINGS_TITLE); self.resize(850,590); self.setMinimumSize(720,520)
   self._input_trace=input_diagnostics.Trace(APP/'input-diagnostics.jsonl');self._input_job_counter=0;self._input_active_job=None
   self.setStyleSheet("""
    QWidget { background: #fff; color: #172f3e; font-family: 'Malgun Gothic'; font-size: 10pt; }
@@ -431,7 +431,16 @@ class App(QWidget):
  def select_page(self,index):
   self.stack.setCurrentIndex(index)
   for i,b in enumerate(self.nav): b.setChecked(i==index)
+ def nativeEvent(self,event_type,message):
+  if singleton.is_show_request(event_type,message):
+   if not getattr(self,'_quitting',False) and not getattr(self,'_settings_show_pending',False):
+    self._settings_show_pending=True
+    QTimer.singleShot(0,self.show_settings)
+   return True,0
+  return super().nativeEvent(event_type,message)
  def show_settings(self):
+  self._settings_show_pending=False
+  if getattr(self,'_quitting',False):return
   if self.isMinimized():self.showNormal()
   else:self.show()
   self.raise_();self.activateWindow()
