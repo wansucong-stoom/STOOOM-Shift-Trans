@@ -22,12 +22,13 @@ class Lease:
 
 
 class Editor:
-    def __init__(self,text,caret,selection=None,forward='normal'):
+    def __init__(self,text,caret,selection=None,forward='normal',automatic_forward=False):
         self.text=text;self.anchor_pos=caret;self.active=caret
         if selection is not None:self.anchor_pos,self.active=selection
         self.revision=7;self.focus=object();self.owner_pids=(123,)
         self.focused=True;self.clock=0.;self.events=[];self.pasted=0;self.selected=0
         self.forward=forward;self.after_chord=None;self.copy_values=[]
+        self.automatic_forward=automatic_forward
     def activity(self):return self.revision,self.clock
     def current(self):return self.focused
     def modifiers(self):return False
@@ -44,7 +45,15 @@ class Editor:
     def up(self,position):return self.text.rfind('\n',0,max(0,position-1))+1
     def select(self,guard,pause):
         self.selected+=1
-        return k.Windows.select(self,guard,pause)
+        strategy=k.Windows.select(self,guard,pause)
+        if self.automatic_forward:self.anchor_pos,self.active=self.active,self.anchor_pos
+        return strategy
+    def previous(self,position):
+        step=2 if self.text[max(0,position-2):position]=='\r\n' else 1
+        return max(0,position-step)
+    def following(self,position):
+        step=2 if self.text[position:position+2]=='\r\n' else 1
+        return min(len(self.text),position+step)
     def chord(self,*keys):
         self.events.append(keys)
         if keys==(k.CTRL,ord('C')):
@@ -56,7 +65,11 @@ class Editor:
         elif keys==(k.CTRL,k.SHIFT,k.UP):self.active=self.up(self.active)
         elif keys==(k.LEFT,):
             start,end=self.bounds()
-            self.active=start if start!=end else max(0,self.active-1)
+            self.active=start if start!=end else self.previous(self.active)
+            self.anchor_pos=self.active
+        elif keys==(k.RIGHT,):
+            start,end=self.bounds()
+            self.active=end if start!=end else self.following(self.active)
             self.anchor_pos=self.active
         elif keys==(k.CTRL,k.SHIFT,k.DOWN):
             if self.forward=='normal':self.active=self.down(self.active)
@@ -65,8 +78,8 @@ class Editor:
         elif keys==(k.SHIFT,k.LEFT):
             # Hosts commonly expose CRLF as two copied characters but one
             # paragraph-boundary caret position. The recopy still proves it.
-            step=2 if self.text[max(0,self.active-2):self.active]=='\r\n' else 1
-            self.active=max(0,self.active-step)
+            self.active=self.previous(self.active)
+        elif keys==(k.SHIFT,k.RIGHT):self.active=self.following(self.active)
         elif keys==(k.CTRL,ord('V')):
             start,end=self.bounds();replacement=self.lease.text
             self.text=self.text[:start]+replacement+self.text[end:]
@@ -90,12 +103,12 @@ for offset in (0,len(paragraph)//2,len(paragraph)):
     e=Editor(original,len(prefix)+offset);driver=k.Driver(e,e.factory)
     snapshot=driver.capture(7)
     assert snapshot.text==paragraph and snapshot.selected_automatically
-    assert e.text==original and e.anchor_pos<e.active
-    assert (k.LEFT,) in e.events and (k.CTRL,k.SHIFT,k.DOWN) in e.events
-    # The original range including its delimiter is recopied unchanged before
-    # the first ShiftLeft; the final source verification excludes the delimiter.
-    assert e.copy_values==[None,paragraph+'\n',paragraph+'\n',paragraph,paragraph]
-    assert e.clock<.3
+    assert e.text==original and e.anchor_pos>e.active
+    assert (k.RIGHT,) in e.events and (k.CTRL,k.SHIFT,k.DOWN) not in e.events
+    # The failed endpoint probe extends backward; restore its exact source
+    # before collapsing to the end and selecting without the paragraph mark.
+    assert e.copy_values==[None,paragraph+'\n','\n'+paragraph+'\n',paragraph+'\n',paragraph,paragraph]
+    assert e.clock<.5
     driver.apply(snapshot,'Translated paragraph.')
     assert e.text==prefix+'Translated paragraph.'+suffix and e.pasted==1
 
@@ -120,21 +133,75 @@ for offset in (0,len(paragraph)//2,len(paragraph)):
     e=Editor(crlf_prefix+paragraph+crlf_suffix,len(crlf_prefix)+offset)
     driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
     assert snapshot.text==paragraph
-    assert e.copy_values==[None,paragraph+'\r\n',paragraph+'\r\n',paragraph,paragraph]
+    assert e.copy_values==[None,paragraph+'\r\n','\r\n'+paragraph+'\r\n',paragraph+'\r\n',paragraph,paragraph]
     driver.apply(snapshot,'CRLF translation.')
     assert e.text==crlf_prefix+'CRLF translation.'+crlf_suffix
 
-# Unsupported or broader forward navigation is never accepted as the source.
+# Forward selection is not the inverse of backward selection in every host.
+# Neither missing nor broader Ctrl+Shift+Down affects the new end-based route.
 for behavior in ('unsupported','too_far'):
-    e=Editor(original,len(prefix)+5,forward=behavior);refused(e)
-    assert (k.CTRL,k.SHIFT,k.DOWN) in e.events and (k.SHIFT,k.LEFT) not in e.events
+    e=Editor(original,len(prefix)+5,forward=behavior)
+    driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+    assert snapshot.text==paragraph and (k.CTRL,k.SHIFT,k.DOWN) not in e.events
+    driver.apply(snapshot,'Asymmetric navigation.')
+    assert e.text==prefix+'Asymmetric navigation.'+suffix and e.pasted==1
 
-# A real interaction between collapse and forward selection cancels before the
+# Some hosts leave the active endpoint at the end even for a keyboard Up
+# selection. Probe the real endpoint instead of trusting the strategy label.
+for delimiter in ('\n','\r\n'):
+    before='Previous paragraph.'+delimiter;after=delimiter+'Next paragraph.'+delimiter
+    for offset in (0,5,len(paragraph)):
+        e=Editor(before+paragraph+after,len(before)+offset,forward='unsupported',automatic_forward=True)
+        driver=k.Driver(e,e.factory);snapshot=driver.capture(7)
+        assert snapshot.text==paragraph and snapshot.selected_automatically
+        assert e.copy_values==[None,paragraph+delimiter,paragraph,paragraph]
+        assert (k.RIGHT,) not in e.events and (k.SHIFT,k.RIGHT) not in e.events
+        assert (k.CTRL,k.SHIFT,k.DOWN) not in e.events
+        driver.apply(snapshot,'Forward endpoint.')
+        assert e.text==before+'Forward endpoint.'+after and e.pasted==1
+
+# Shift+Left cannot extend before the document start. A no-op probe must not
+# be "restored" with Shift+Right, which would drop the first source character.
+e=Editor(paragraph+suffix,5);driver=k.Driver(e,e.factory)
+snapshot=driver.capture(7)
+assert snapshot.text==paragraph and (k.SHIFT,k.RIGHT) not in e.events
+driver.apply(snapshot,'First paragraph.')
+assert e.text=='First paragraph.'+suffix
+
+# A restoration key whose host behavior differs must never be followed by
+# navigation/paste based on a guessed range.
+e=Editor(original,len(prefix)+5)
+def damage_restore(editor,keys):
+    if keys==(k.SHIFT,k.RIGHT):editor.active=editor.following(editor.active)
+e.after_chord=damage_restore;refused(e)
+assert (k.RIGHT,) not in e.events
+
+# A host that collapses Right to the wrong endpoint cannot lose source text.
+e=Editor(original,len(prefix)+5)
+def wrong_collapse(editor,keys):
+    if keys==(k.RIGHT,):editor.active=len(prefix);editor.anchor_pos=editor.active
+e.after_chord=wrong_collapse;refused(e)
+
+# Copy-only trailing line breaks are not proof of a selected paragraph mark:
+# shrinking such a range must fail rather than silently drop its final letter.
+class SyntheticBreak(Editor):
+    def chord(self,*keys):
+        super().chord(*keys)
+        if keys==(k.CTRL,ord('C')) and self.lease.text is not None:
+            self.lease.text+='\n';self.copy_values[-1]=self.lease.text
+e=SyntheticBreak(prefix+paragraph,len(prefix)+5);refused(e)
+
+# Remove exactly one selected delimiter, not every trailing blank paragraph.
+e=Editor('PRE\nONE\n\nPOST',4,selection=(4,9))
+snapshot=k.Driver(e,e.factory).capture(7)
+assert snapshot.text=='ONE\n' and e.text=='PRE\nONE\n\nPOST'
+
+# A real interaction between collapse and backward selection cancels before the
 # next navigation key. Source/focus/revision protections remain in force.
 e=Editor(original,len(prefix)+5)
 e.after_chord=lambda editor,keys:setattr(editor,'revision',8) if keys==(k.LEFT,) else None
 refused(e)
-assert (k.CTRL,k.SHIFT,k.DOWN) not in e.events
+assert e.events.count((k.CTRL,k.SHIFT,k.UP))==1
 
 # User selections, including multiple paragraphs, are never blindly replaced
 # with a new paragraph selection. Forward selection preserves prior behavior;
@@ -181,4 +248,4 @@ assert (k.CTRL,k.DOWN) in e.events and (k.CTRL,k.SHIFT,k.UP) in e.events
 driver.apply(snapshot,'Keyboard-only translation.')
 assert e.text==prefix+'Keyboard-only translation.'+suffix and e.pasted==1
 
-print('Paragraph direction: keyboard-only default with valid table-object caret, backward/forward recopy, boundaries/refusal, user selections and diagnostic click orientation: PASS')
+print('Paragraph direction: endpoint probe, HWP-like forward auto-selection, asymmetric navigation, exact restoration, start/end/CRLF boundaries, synthetic copy breaks, user selections and no mouse input: PASS')

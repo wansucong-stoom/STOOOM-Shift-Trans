@@ -18,6 +18,8 @@ import update_control
 import release_updates
 import keyboard_access
 import input_diagnostics
+import windows_identity
+import native_decode
 from pathlib import Path
 from PySide6.QtCore import QObject, Signal, QTimer, QUrl
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QCheckBox, QSystemTrayIcon, QMenu, QMessageBox, QFileDialog, QStackedWidget, QFrame, QProgressBar
@@ -235,10 +237,7 @@ def translate_route(text,route):
   for should_translate,part in chunking.chunks(text,sp):
    if not should_translate:
     output.append(part); continue
-   tokens=sp.encode(part,out_type=str)
-   result=tr.translate_batch([tokens],beam_size=4,max_decoding_length=256)[0].hypotheses[0]
-   translated=sp.decode(result)
-   if not translated.strip(): raise ValueError('일부 번역 결과가 비어 있어 교체하지 않습니다.')
+   translated=native_decode.translate_part(k,sp,tr,part)
    output.append(translated)
   text=''.join(output)
   if not text.strip(): raise ValueError('번역 결과가 비어 있어 교체하지 않습니다.')
@@ -514,6 +513,9 @@ class App(QWidget):
   elif kind=='launched':
    if event['error']:
     self._release_installing=False;self.check_updates.setEnabled(True);self.auto_install_updates.setEnabled(True);self.release_check_button.setEnabled(True);self.release_install_button.setEnabled(True);self.release_status.setText('업데이트 설치를 시작하지 못했습니다: '+event['error'])
+   elif event.get('package_kind')=='msi':
+    self.release_status.setText('MSI 업데이트를 위해 번역기를 종료합니다. 설치 후 새 버전을 실행하세요.')
+    self.quit()
    else:self.release_status.setText('설치 프로그램을 실행했습니다. 업데이트 요청을 기다리고 있습니다.')
   elif kind=='installer_exited':
    self._release_installing=False;self.check_updates.setEnabled(True);self.auto_install_updates.setEnabled(True);self.release_check_button.setEnabled(True);self.release_install_button.setEnabled(True)
@@ -535,7 +537,7 @@ class App(QWidget):
    try:
     # Revalidation and process creation can perform disk IO. Keep both off Qt.
     process=release_updates.launch_installer(ready['path'])
-    if not self._quitting:self.bridge.release_event.emit({'kind':'launched','error':''})
+    if not self._quitting:self.bridge.release_event.emit({'kind':'launched','error':'','package_kind':Path(ready['path']).suffix.lower().lstrip('.')})
     code=process.wait()
     if not self._quitting:self.bridge.release_event.emit({'kind':'installer_exited','code':code})
    except Exception as error:
@@ -1024,6 +1026,7 @@ if __name__=='__main__':
  if len(sys.argv)>1 and sys.argv[1]=='--check-pack':
   import pack_diagnostics
   sys.exit(pack_diagnostics.run(sys.argv[2:],sys.modules[__name__]))
+ windows_identity.set_taskbar_identity()
  if '--after-update' in sys.argv:
   deadline=time.monotonic()+15
   while update_control.installation_active() and time.monotonic()<deadline:time.sleep(.05)

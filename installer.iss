@@ -1,7 +1,8 @@
 #define AppName "STOOM Shift Translator"
 #define AppExe "STOOMShiftTranslator.exe"
+#define AppUserModelID "STOOM.ShiftTranslator"
 #ifndef AppVersion
-#define AppVersion "0.6.10"
+#define AppVersion "0.6.11"
 #endif
 #ifndef BuildRoot
 #define BuildRoot "dist"
@@ -26,7 +27,7 @@ RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=dist
-OutputBaseFilename=STOOM-Translator-v0610-TSF-setup
+OutputBaseFilename=STOOM-Translator-v0611-TSF-setup
 SetupIconFile=stoom.ico
 UninstallDisplayIcon={app}\branding\sst\stoom.ico
 Compression=lzma2/fast
@@ -38,12 +39,15 @@ WizardSmallImageFile=branding\sst\installer-small.bmp
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 [Files]
 Source: "{#BuildRoot}\STOOMShiftTranslator\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Shell shortcuts cannot resolve PyInstaller's _internal resource directory.
+; Install the approved ICO at the exact external path referenced below.
+Source: "branding\sst\stoom.ico"; DestDir: "{app}\branding\sst"; Flags: ignoreversion
 #ifdef TsfSetup
 Source: "{#TsfSetup}"; DestName: "STOOMTextService-setup.exe"; Flags: dontcopy
 #endif
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\branding\sst\stoom.ico"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\branding\sst\stoom.ico"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\branding\sst\stoom.ico"; AppUserModelID: "{#AppUserModelID}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\branding\sst\stoom.ico"; AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면에 바로가기 만들기"; Flags: unchecked
 #ifdef TsfSetup

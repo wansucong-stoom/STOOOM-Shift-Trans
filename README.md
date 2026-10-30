@@ -7,16 +7,20 @@
 
 Windows 입력창에서 선택한 글을 오프라인으로 번역해 교체합니다. **Shift 두 번 / Ctrl 두 번**에 각각 목표 언어를 지정할 수 있습니다.
 
-**0.6.10 · 빌드 20261030.5**  
+**0.6.11 · 빌드 20261030.7**  
 [최신 릴리즈](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/latest) · [변경 기록](CHANGELOG.md) · [검증 결과](KEYBOARD_TEST_RESULTS.md)
 
 ## 설치와 업데이트
 
 - Windows 10/11 x64용입니다. 사용 PC에 Python이나 빌드 도구를 따로 설치하지 않습니다.
-- [v0.6.10 설치 파일](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.10/STOOM-Translator-v0610-TSF-setup.exe)을 실행합니다.
+- 기존 EXE 설치의 업데이트는 [v0.6.11 설치 파일](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.11/STOOM-Translator-v0611-TSF-setup.exe)을 실행합니다.
 - 기존 설치 위에 업데이트할 수 있으며 받은 언어팩과 설정을 유지합니다.
 - 모델은 설치 EXE에 포함하지 않습니다. 최초 다운로드에는 인터넷이 필요하고, 설치 후 기본 번역은 오프라인으로 실행됩니다.
 - 선택적인 Windows 입력 지원(TSF) 설치에는 관리자 승인이 필요할 수 있습니다. 기본 키보드 경로는 TSF 문서 기능을 필수로 요구하지 않습니다.
+
+**MSI 설치:** [MSI 다운로드](https://github.com/wansucong-stoom/STOOOM-Shift-Trans/releases/download/v0.6.11/STOOM-Translator-v0611-TSF-setup.msi). 기존 번역기를 트레이에서 종료한 뒤 설치하고 시작 메뉴의 MSI 버전을 실행하세요. MSI는 기존 EXE 설치와 별도 경로를 사용하고, 받은 모델·설정은 공유합니다. 기존 EXE 설치를 자동 제거하거나 MSI로 전환하지 않습니다. MSI끼리의 업데이트는 같은 MSI 제품군을 사용합니다. MSI에는 별도 TSF 등록 설치를 포함하지 않으며 기존 TSF 등록과 기본 키보드 경로를 사용할 수 있습니다.
+
+현재 배포 파일은 코드 서명되지 않았습니다. **MSI 확장자만으로 SmartScreen·백신·게시자 경고가 없어지지는 않습니다.** 보안 설정을 변경하지 않습니다.
 
 릴리즈의 `SHA256SUMS.txt`로 파일을 확인할 수 있습니다. `STOOM-product-identity-v1.zip`은 공통 브랜드 개발 자료이며 앱 설치에 필요하지 않습니다.
 
@@ -27,7 +31,7 @@ Windows 입력창에서 선택한 글을 오프라인으로 번역해 교체합�
 3. **언어팩 관리**에서 필요한 방향과 모델을 선택해 설치합니다.
 4. 입력창에서 번역할 글을 선택하고 단축키를 누릅니다. 선택이 없으면 키보드 문단 선택을 시도합니다.
 
-기본 경로는 자동 마우스 클릭을 하지 않습니다. 같은 창 안의 자식 입력창·스레드·캐럿 변화만으로 중단하지 않으며, 교체 직전 실제 원문을 다시 복사해 확인하고 Ctrl+V를 한 번 보냅니다.
+기본 경로는 자동 마우스 클릭을 하지 않습니다. 문단 끝의 선택 방향을 복사 결과로 확인하며, 앞으로 재선택하던 키 동작을 제거했습니다. 같은 창 안의 자식 입력창·스레드·캐럿 변화만으로 중단하지 않으며, 교체 직전 실제 원문을 다시 복사해 확인하고 Ctrl+V를 한 번 보냅니다.
 
 **자동 문단 선택은 Windows가 모든 프로그램에 보장하는 기능이 아닙니다.** 각 편집기의 Ctrl+방향키 동작에 영향을 받으므로 범위가 맞지 않는 프로그램에서는 글을 직접 선택하세요.
 
@@ -44,6 +48,7 @@ Windows 입력창에서 선택한 글을 오프라인으로 번역해 교체합�
 
 - OPUS-MT Big: 방향당 원본 약 741MiB를 받고 최초 설치 시 CTranslate2 INT8로 변환합니다.
 - Argos 기본: 방향당 약 112~115MiB를 받습니다. Argos Translate·spaCy·Stanza 런타임을 앱에 포함하는 구성은 아닙니다.
+- OPUS 원본 Marian은 미등록 토큰 출력을 기본적으로 막습니다. CTranslate2 호출도 같은 정책으로 맞춰 `⁇` 반복 출력을 수정했습니다. FP32에서도 기존 문제를 재현해 INT8만의 문제는 아님을 확인했습니다. 전문 용어·직급·이름의 오역은 여전히 발생할 수 있습니다.
 - INT8은 추론용 양자화 방식이며, 하나의 모델을 양방향으로 쓴다는 뜻은 아닙니다.
 - 같은 방향에서는 모델 하나를 선택합니다. 이미 설치된 모델은 다시 받지 않습니다.
 - 이름·주어·문맥의 오역이 있을 수 있으며 모델 크기나 양자화 여부만으로 품질을 보장하지 않습니다.
@@ -53,7 +58,7 @@ OPUS 원본은 University of Helsinki의 [한국어→영어](https://huggingfac
 ## 호환 범위와 알려진 한계
 
 - 사용자가 Pwh와 여러 한글 문단의 실제 교체 성공을 확인했습니다. 모든 프로그램·입력창의 성공을 뜻하지는 않습니다.
-- 한글 표 마지막 문장·대괄호 제목 등에서 선택 실패와 표 속성 창 열림이 보고됐습니다. 0.6.10은 자동 마우스 선택을 제거했으며 해당 위치의 새 버전 최종 성공은 추가 확인 대상입니다.
+- 한글 표 마지막 문장·대괄호 제목 등에서 선택 실패와 표 속성 창 열림이 보고됐습니다. 0.6.11은 자동 마우스 선택을 제거했으며 해당 위치의 새 버전 최종 성공은 추가 확인 대상입니다.
 - 마지막 줄바꿈 뒤 빈 문단에서는 직전 문단을 선택할 수 있습니다. 이 위치에서는 글을 직접 선택하세요.
 - 문단·글자별 혼합 서식과 실행 취소는 편집기별 추가 검증 대상입니다.
 - 같은 창 안의 다른 위치에 동일 문구가 있으면 클립보드만으로 원래 범위를 구분할 수 없습니다.
@@ -118,7 +123,7 @@ build_windows.bat
 x64/x86 네이티브 빌드·시험, Python 회귀 시험, PyInstaller 패키징 후 다음 파일을 만듭니다.
 
 ```text
-dist/STOOM-Translator-v0610-TSF-setup.exe
+dist/STOOM-Translator-v0611-TSF-setup.exe
 ```
 
 네이티브 코드·아이콘을 바꿔 배포하면 `STOOM_NATIVE_VERSION`도 새 값으로 올립니다. 로드된 DLL을 같은 경로에 덮어쓰지 않도록 버전별 폴더를 사용합니다. 현재 배포 파일은 별도로 코드 서명하지 않았습니다.
@@ -133,7 +138,7 @@ python branding/build_product_identity.py NEW_OUTPUT_DIRECTORY
 
 ## 검증
 
-0.6.10은 Python 시험49개, x64/x86 private TSF 범위·수명 시험, 최종 EXE 코드·자산·PE 아이콘, 공통 브랜드 재생성과 격리 UI 검사를 통과했습니다. Python을 PATH에서 제외한 동결 EXE의 모델 로딩·고정 예문 번역도 확인했습니다.
+0.6.11은 문단 선택·OPUS 디코딩·작업표시줄 아이콘 회귀 시험과 최종 EXE 검사를 수행했습니다. MSI는 설치 데이터베이스·업그레이드 테이블·내장 파일의 바이트를 검사합니다. 실제 MSI 설치·제거 및 기존 MSI에서의 업데이트는 별도 사용자 확인 대상입니다. 네이티브 TSF 코드와 브랜드 원형 자산은 0.6.10에서 검증한 것을 유지합니다. Python을 PATH에서 제외한 동결 EXE의 모델 로딩·고정 예문 번역도 확인했습니다.
 
 실제 한글 표의 남은 위치·모든 앱의 교체/서식/실행 취소, Python 미설치 클린 PC의 전체 설치/UI, v0.4 대비 전체 용량·메모리·지연 실측 비교는 미검증입니다. 상세 범위는 [KEYBOARD_TEST_RESULTS.md](KEYBOARD_TEST_RESULTS.md)를 참고하세요.
 
@@ -149,3 +154,5 @@ python branding/build_product_identity.py NEW_OUTPUT_DIRECTORY
 | `branding/` | 공통 자산·규격·글꼴 출처 |
 | `native_tsf/` | 선택적 Windows TSF 구성요소 |
 | `tests/` | 회귀 시험 |
+
+MSI 빌드는 Windows Python 3.11에서 `python build_msi.py --version 0.6.11`로 실행합니다. 자세한 사용 조건은 [MSI 안내](MSI_INSTALL.md)를 참고하세요.

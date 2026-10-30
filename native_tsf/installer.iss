@@ -3,7 +3,7 @@
 ; Bump ComponentVersion for every shipped native build: loaded DLLs belong to
 ; other applications and must not be overwritten in place during an upgrade.
 #ifndef ComponentVersion
-#define ComponentVersion "0.6.10-20261030.5"
+#define ComponentVersion "0.6.11-20261030.7"
 #endif
 #ifndef NativeBuildRoot
 #define NativeBuildRoot "build"
