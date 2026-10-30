@@ -186,6 +186,7 @@ class ClipboardLease:
    # our lease so failure also restores the user's original rich clipboard.
    self.ours=seq
    if not win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
+    if win32clipboard.CountClipboardFormats()==0:return ''
     raise ValueError('선택한 영역에 복사할 텍스트가 없습니다.')
    return win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
   finally:win32clipboard.CloseClipboard()
